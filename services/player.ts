@@ -1,58 +1,96 @@
 // services/player.ts
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import "react-native-get-random-values"; // IMPORTANT: This import must be at the very top of your project's entry file (e.g., App.tsx or index.js)
-import { v4 as uuidv4 } from "uuid";
+import supabase from "./supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // Import AsyncStorage
+import { v4 as uuidv4 } from "uuid"; // Import uuidv4 for UUID generation
 
-const ID_KEY = "player_id";
-const NAME_KEY = "player_name";
-
-function generateRandomUsername(): string {
-  const adjectives = [
-    "Swift",
-    "Brave",
-    "Clever",
-    "Silent",
-    "Mighty",
-    "Wise",
-    "Quick",
-    "Bold",
-  ];
-  const nouns = [
-    "Fox",
-    "Wolf",
-    "Eagle",
-    "Lion",
-    "Bear",
-    "Tiger",
-    "Hawk",
-    "Panther",
-  ];
-  const randomAdjective =
-    adjectives[Math.floor(Math.random() * adjectives.length)];
-  const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-  return `${randomAdjective}${randomNoun}${Math.floor(Math.random() * 100)}`;
-}
+// List of common Arabic names for random generation
+const arabicNames = [
+  "أحمد",
+  "محمد",
+  "علي",
+  "فاطمة",
+  "زينب",
+  "مريم",
+  "خالد",
+  "سارة",
+  "ليلى",
+  "يوسف",
+  "نور",
+  "عمر",
+  "ريم",
+  "حسن",
+  "جميلة",
+  "طارق",
+  "سميرة",
+  "فارس",
+  "هند",
+  "كريم",
+  "ماجد",
+  "ياسين",
+  "آية",
+  "بدر",
+  "دنيا",
+  "ريان",
+  "سلمى",
+  "شادي",
+  "عائشة",
+  "غادة",
+  "فهد",
+  "قاسم",
+  "لؤي",
+  "مها",
+  "ناصر",
+  "هالة",
+  "وليد",
+  "يمنى",
+  "زهرة",
+  "عادل",
+];
 
 export async function initPlayerSession(): Promise<{
   id: string;
   name: string | null;
 }> {
-  let playerId = await AsyncStorage.getItem(ID_KEY);
+  let playerId = await AsyncStorage.getItem("player_id");
+  let playerName = await AsyncStorage.getItem("player_name");
+
   if (!playerId) {
-    playerId = uuidv4();
-    await AsyncStorage.setItem(ID_KEY, playerId);
+    // Generate a new player ID if not found
+    playerId = uuidv4(); // Use uuidv4 for React Native compatible UUID
+    await AsyncStorage.setItem("player_id", playerId);
   }
 
-  let playerName = await AsyncStorage.getItem(NAME_KEY);
   if (!playerName) {
-    playerName = generateRandomUsername();
-    await AsyncStorage.setItem(NAME_KEY, playerName);
+    // Generate a random Arabic name if not found
+    const randomIndex = Math.floor(Math.random() * arabicNames.length);
+    playerName = arabicNames[randomIndex];
+    await AsyncStorage.setItem("player_name", playerName);
   }
+
+  // Optionally, you can also store this player in a 'players' table in Supabase
+  // if you need a persistent record beyond local storage.
+  // For this app's current scope, local storage is sufficient for session tracking.
 
   return { id: playerId, name: playerName };
 }
 
-export async function changePlayerUsername(name: string): Promise<void> {
-  await AsyncStorage.setItem(NAME_KEY, name);
+export async function changePlayerUsername(newUsername: string): Promise<void> {
+  if (!newUsername) {
+    throw new Error("اسم المستخدم لا يمكن أن يكون فارغاً."); // Username cannot be empty.
+  }
+  await AsyncStorage.setItem("player_name", newUsername);
+
+  // If you had a 'players' table, you would update it here:
+  // const playerId = await AsyncStorage.getItem('player_id');
+  // if (playerId) {
+  //   const { error } = await supabase
+  //     .from('players')
+  //     .update({ username: newUsername })
+  //     .eq('id', playerId);
+  //   if (error) {
+  //     console.error('Error updating player username in DB:', error.message);
+  //     throw new Error('فشل في تحديث اسم المستخدم في قاعدة البيانات.'); // Failed to update username in database.
+  //   }
+  // }
 }

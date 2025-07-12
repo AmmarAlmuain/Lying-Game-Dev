@@ -1,20 +1,21 @@
-// App.tsx or index.ts
-
-import React, { useEffect, useState, useCallback } from "react";
+// App.tsx
+import "react-native-url-polyfill/auto";
+import "react-native-get-random-values";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
   ActivityIndicator,
   StyleSheet,
-  Button,
-  ScrollView,
-  TextInput,
-  Alert,
   TouchableOpacity,
   FlatList,
+  TextInput,
+  Alert,
+  ScrollView,
+  Dimensions,
 } from "react-native";
 
-// Ensure these imports are correct based on your file structure
+// Import services
 import { initPlayerSession, changePlayerUsername } from "../services/player";
 import {
   createRoom,
@@ -22,21 +23,15 @@ import {
   startGame,
   playCards,
   skipTurn,
+  callLie,
 } from "../services/room";
-import supabase from "../services/supabase"; // Import the Supabase client directly
+import supabase from "../services/supabase";
 
-// IMPORTANT: These imports are crucial for Expo/React Native environment
-// They should be at the very top of your project's entry file (e.g., App.tsx or index.js)
-// import 'react-native-url-polyfill/auto';
-// import 'react-native-get-random-values';
-// import { v4 as uuidv4 } from 'uuid'; // Only if you need to generate UUIDs directly in App.tsx for testing
-
-// Card type definition for clarity
+// Card and Player interfaces for type safety
 interface Card {
   rank: string;
   suit: string;
 }
-
 interface Player {
   id: string;
   username: string;
@@ -60,16 +55,19 @@ const ranks = [
   "QUEEN",
   "KING",
 ];
+const { width } = Dimensions.get("window"); // Get screen width for responsive sizing
 
 export default function App() {
-  const [localPlayer, setLocalPlayer] = useState<Player | null>(null); // Stores the full local player object
-  const [roomInfo, setRoomInfo] = useState<any>(null); // Stores the current room state
+  const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
+  const [roomInfo, setRoomInfo] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [usernameInput, setUsernameInput] = useState<string>("");
   const [roomCodeInput, setRoomCodeInput] = useState<string>("");
   const [selectedCards, setSelectedCards] = useState<Card[]>([]);
   const [declaredRankInput, setDeclaredRankInput] = useState<string>("");
+
+  const scrollViewRef = useRef<ScrollView>(null); // Ref for auto-scrolling game log
 
   // --- Initial Setup: Player Session and Room Re-joining ---
   useEffect(() => {
@@ -79,19 +77,16 @@ export default function App() {
         setError(null);
 
         const initialPlayerSession = await initPlayerSession();
-        // IMMEDIATELY set localPlayer with at least the ID and a default structure
-        // This ensures localPlayer.id is available as soon as initPlayerSession resolves
         setLocalPlayer({
           id: initialPlayerSession.id,
-          username: initialPlayerSession.name || "", // Use the name from session or empty string
-          is_host: false, // Default
-          hand_cards: [], // Default
-          card_count: 0, // Default
+          username: initialPlayerSession.name || "",
+          is_host: false,
+          hand_cards: [],
+          card_count: 0,
         });
         setUsernameInput(initialPlayerSession.name || "");
         console.log("Player Initialized (Initial Set):", initialPlayerSession);
 
-        // Now, proceed with room fetching and update localPlayer if found in a room
         const { data: rooms, error: roomFetchError } = await supabase
           .from("room")
           .select("*")
@@ -102,7 +97,6 @@ export default function App() {
             "Error checking for existing room:",
             roomFetchError.message
           );
-          // If there's a fetch error, localPlayer already holds the basic info.
         } else if (rooms && rooms.length > 0) {
           const existingRoom = rooms[0];
           setRoomInfo(existingRoom);
@@ -111,16 +105,13 @@ export default function App() {
             (p: Player) => p.id === initialPlayerSession.id
           );
           if (playerInRoom) {
-            setLocalPlayer(playerInRoom); // Update with full player data from room
+            setLocalPlayer(playerInRoom);
           }
           console.log("Rejoined existing room:", existingRoom);
         }
-        // If no room found, localPlayer remains as initially set.
       } catch (err: any) {
         console.error("Error during initial setup:", err);
-        setError(err.message || "An unknown error occurred during setup.");
-        // If an error occurs here, localPlayer might not be fully set,
-        // but the `loading` state will prevent immediate action.
+        setError(err.message || "حدث خطأ غير معروف أثناء الإعداد.");
       } finally {
         setLoading(false);
       }
@@ -145,17 +136,23 @@ export default function App() {
         },
         (payload) => {
           console.log("Realtime Room Update Received:", payload.new);
-          setRoomInfo(payload.new); // Update the room state with the latest data
+          setRoomInfo(payload.new);
 
-          // Also update the local player's specific data from the new room state
           const updatedLocalPlayer = payload.new.players.find(
             (p: Player) => p.id === localPlayer?.id
           );
           if (updatedLocalPlayer) {
             setLocalPlayer(updatedLocalPlayer);
           }
-          setSelectedCards([]); // Clear selected cards on any room update
-          setDeclaredRankInput(""); // Clear declared rank input
+          setSelectedCards([]);
+          // Only clear declared rank input if the new room state explicitly nulls it
+          if (payload.new.declared_rank === null) {
+            setDeclaredRankInput("");
+          }
+          // Scroll to bottom of game log on update
+          setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }, 100);
         }
       )
       .on(
@@ -173,10 +170,7 @@ export default function App() {
           setRoomCodeInput("");
           setSelectedCards([]);
           setDeclaredRankInput("");
-          Alert.alert(
-            "Room Deleted",
-            "The host has left or the room has been deleted."
-          );
+          Alert.alert("تم حذف الغرفة", "لقد غادر المضيف أو تم حذف الغرفة.");
         }
       )
       .subscribe();
@@ -184,39 +178,37 @@ export default function App() {
     return () => {
       roomChannel.unsubscribe();
     };
-  }, [roomInfo?.id, localPlayer?.id]); // Depend on roomInfo.id and localPlayer.id for re-subscription
+  }, [roomInfo?.id, localPlayer?.id]);
 
   // --- Handlers for UI Actions ---
 
   const handleChangeUsername = async () => {
-    if (!usernameInput) {
-      Alert.alert("Error", "Username cannot be empty.");
+    if (!usernameInput.trim()) {
+      Alert.alert("خطأ", "لا يمكن أن يكون اسم المستخدم فارغاً.");
       return;
     }
     setLoading(true);
     try {
-      await changePlayerUsername(usernameInput);
-      // Update localPlayer's username directly for immediate feedback
+      await changePlayerUsername(usernameInput.trim());
       setLocalPlayer((prev) =>
-        prev ? { ...prev, username: usernameInput } : null
+        prev ? { ...prev, username: usernameInput.trim() } : null
       );
-      Alert.alert("Success", "Username updated!");
+      Alert.alert("نجاح", "تم تحديث اسم المستخدم!");
     } catch (err: any) {
       console.error("Error changing username:", err);
-      setError(err.message || "Failed to change username.");
+      setError(err.message || "فشل في تغيير اسم المستخدم.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreateRoom = async () => {
-    if (!usernameInput) {
-      Alert.alert("Error", "Please enter a username.");
+    if (!usernameInput.trim()) {
+      Alert.alert("خطأ", "الرجاء إدخال اسم المستخدم.");
       return;
     }
     if (!localPlayer?.id) {
-      // This check should ideally pass now due to immediate localPlayer setting
-      Alert.alert("Error", "Player ID not available. Please restart the app.");
+      Alert.alert("خطأ", "معرف اللاعب غير متاح. الرجاء إعادة تشغيل التطبيق.");
       return;
     }
 
@@ -224,44 +216,41 @@ export default function App() {
     try {
       const { room: newRoom, player: hostPlayerRecord } = await createRoom(
         localPlayer.id,
-        usernameInput
+        usernameInput.trim()
       );
       setRoomInfo(newRoom);
-      setLocalPlayer(hostPlayerRecord); // Set local player as the host from the room record
+      setLocalPlayer(hostPlayerRecord);
       setRoomCodeInput(newRoom.room_code);
-      console.log("Room Created:", newRoom);
     } catch (err: any) {
       console.error("Error creating room:", err);
-      setError(err.message || "Failed to create room.");
+      setError(err.message || "فشل في إنشاء الغرفة.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleJoinRoom = async () => {
-    if (!usernameInput || !roomCodeInput) {
-      Alert.alert("Error", "Please enter a username and room code.");
+    if (!usernameInput.trim() || !roomCodeInput.trim()) {
+      Alert.alert("خطأ", "الرجاء إدخال اسم المستخدم ورمز الغرفة.");
       return;
     }
     if (!localPlayer?.id) {
-      // This check should ideally pass now due to immediate localPlayer setting
-      Alert.alert("Error", "Player ID not available. Please restart the app.");
+      Alert.alert("خطأ", "معرف اللاعب غير متاح. الرجاء إعادة تشغيل التطبيق.");
       return;
     }
 
     setLoading(true);
     try {
       const { room: joinedRoom, player: joinedPlayerRecord } = await joinRoom(
-        roomCodeInput,
+        roomCodeInput.trim(),
         localPlayer.id,
-        usernameInput
+        usernameInput.trim()
       );
       setRoomInfo(joinedRoom);
-      setLocalPlayer(joinedPlayerRecord); // Set local player as the joined player from the room record
-      console.log("Joined Room:", joinedRoom);
+      setLocalPlayer(joinedPlayerRecord);
     } catch (err: any) {
       console.error("Error joining room:", err);
-      setError(err.message || "Failed to join room.");
+      setError(err.message || "فشل في الانضمام إلى الغرفة.");
     } finally {
       setLoading(false);
     }
@@ -269,22 +258,20 @@ export default function App() {
 
   const handleStartGame = async () => {
     if (!roomInfo || !localPlayer) {
-      setError("Room or player information is not available.");
+      setError("معلومات الغرفة أو اللاعب غير متوفرة.");
       return;
     }
     if (roomInfo.host_player_id !== localPlayer.id) {
-      Alert.alert("Error", "Only the host can start the game.");
+      Alert.alert("خطأ", "المضيف فقط يمكنه بدء اللعبة.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      // startGame updates the room, which will trigger the realtime listener
       await startGame(roomInfo.id, localPlayer.id);
-      console.log("Game Start request sent.");
     } catch (err: any) {
       console.error("Error starting game:", err);
-      setError(err.message || "Failed to start game.");
+      setError(err.message || "فشل في بدء اللعبة.");
     } finally {
       setLoading(false);
     }
@@ -301,13 +288,13 @@ export default function App() {
           .eq("id", roomInfo.id);
         if (roomDeleteError) throw roomDeleteError;
         Alert.alert(
-          "Room Deleted",
-          "You left and the room was deleted as you were the host."
+          "تم حذف الغرفة",
+          "لقد غادرت وتم حذف الغرفة لأنك كنت المضيف."
         );
       } else {
         const { data: currentRoom, error: fetchRoomError } = await supabase
           .from("room")
-          .select("players")
+          .select("players, game_log")
           .eq("id", roomInfo.id)
           .single();
 
@@ -316,15 +303,17 @@ export default function App() {
         const updatedPlayers = currentRoom.players.filter(
           (p: any) => p.id !== localPlayer.id
         );
+        const leaveMessage = `${localPlayer.username} غادر الغرفة.`;
+        const updatedGameLog = [...currentRoom.game_log, leaveMessage];
 
         const { error: roomUpdateError } = await supabase
           .from("room")
-          .update({ players: updatedPlayers })
+          .update({ players: updatedPlayers, game_log: updatedGameLog })
           .eq("id", roomInfo.id);
 
         if (roomUpdateError) throw roomUpdateError;
 
-        Alert.alert("Left Room", "You left the room.");
+        Alert.alert("غادرت الغرفة", "لقد غادرت الغرفة بنجاح.");
 
         if (updatedPlayers.length === 0) {
           const { error: emptyRoomDeleteError } = await supabase
@@ -348,13 +337,12 @@ export default function App() {
       setDeclaredRankInput("");
     } catch (err: any) {
       console.error("Error leaving room:", err.message);
-      setError(err.message || "Error leaving room.");
+      setError(err.message || "خطأ في مغادرة الغرفة.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Modified handleCardPress to limit selection to 4 cards
   const handleCardPress = useCallback((card: Card) => {
     setSelectedCards((prevSelected) => {
       const isSelected = prevSelected.some(
@@ -365,12 +353,11 @@ export default function App() {
           (sc) => sc.rank !== card.rank || sc.suit !== card.suit
         );
       } else {
-        // Only allow adding if less than 4 cards are already selected
         if (prevSelected.length < 4) {
           return [...prevSelected, card];
         } else {
-          Alert.alert("Limit Reached", "You can select a maximum of 4 cards.");
-          return prevSelected; // Return current selection if limit reached
+          Alert.alert("الحد الأقصى", "يمكنك اختيار 4 بطاقات كحد أقصى.");
+          return prevSelected;
         }
       }
     });
@@ -378,39 +365,49 @@ export default function App() {
 
   const handlePlayCards = async () => {
     if (!localPlayer || !roomInfo) {
-      Alert.alert("Error", "Player or room information missing.");
+      Alert.alert("خطأ", "معلومات اللاعب أو الغرفة مفقودة.");
       return;
     }
     if (selectedCards.length === 0) {
-      Alert.alert("Error", "Please select at least one card to play.");
+      Alert.alert("خطأ", "الرجاء تحديد بطاقة واحدة على الأقل للعب.");
       return;
     }
-    // The 4-card limit is now enforced by handleCardPress, but this check remains as a safeguard
     if (selectedCards.length > 4) {
-      Alert.alert("Error", "You can play a maximum of 4 cards.");
+      Alert.alert("خطأ", "يمكنك لعب 4 بطاقات كحد أقصى.");
       return;
     }
+
+    // Determine if declaredRankInput is required or fixed
+    const isDeclaredRankRequired =
+      roomInfo.pile_cards_count === 0 || roomInfo.declared_rank === null;
+
     if (
-      !declaredRankInput ||
-      !ranks.includes(declaredRankInput.toUpperCase())
+      isDeclaredRankRequired &&
+      (!declaredRankInput.trim() ||
+        !ranks.includes(declaredRankInput.toUpperCase()))
     ) {
-      Alert.alert("Error", `Please declare a valid rank: ${ranks.join(", ")}`);
+      Alert.alert("خطأ", `الرجاء إعلان رتبة صالحة: ${ranks.join(", ")}`);
       return;
     }
+
+    // If not declared rank required, use the existing declared rank
+    const finalDeclaredRank = isDeclaredRankRequired
+      ? declaredRankInput.toUpperCase()
+      : roomInfo.declared_rank;
+
     setLoading(true);
     try {
       await playCards(
         roomInfo.id,
         localPlayer.id,
         selectedCards,
-        declaredRankInput.toUpperCase()
+        finalDeclaredRank
       );
-      setSelectedCards([]); // Clear selection after playing
-      setDeclaredRankInput(""); // Clear declared rank after playing
-      Alert.alert("Success", "Cards played!");
+      setSelectedCards([]);
+      // Declared rank input is cleared by the useEffect if roomInfo.declared_rank becomes null
     } catch (err: any) {
       console.error("Error playing cards:", err);
-      setError(err.message || "Failed to play cards.");
+      setError(err.message || "فشل في لعب البطاقات.");
     } finally {
       setLoading(false);
     }
@@ -421,10 +418,10 @@ export default function App() {
     setLoading(true);
     try {
       await skipTurn(roomInfo.id, localPlayer.id);
-      Alert.alert("Turn Skipped", "You passed your turn.");
+      Alert.alert("تم تخطي الدور", "لقد تخطيت دورك.");
     } catch (err: any) {
       console.error("Error skipping turn:", err);
-      setError(err.message || "Failed to skip turn.");
+      setError(err.message || "فشل في تخطي الدور.");
     } finally {
       setLoading(false);
     }
@@ -435,10 +432,10 @@ export default function App() {
     setLoading(true);
     try {
       await callLie(roomInfo.id, localPlayer.id);
-      Alert.alert("Lie Called!", "The lie has been called.");
+      Alert.alert("تم كشف الكذب!", "لقد تم كشف الكذب.");
     } catch (err: any) {
       console.error("Error calling lie:", err);
-      setError(err.message || "Failed to call lie.");
+      setError(err.message || "فشل في كشف الكذب.");
     } finally {
       setLoading(false);
     }
@@ -451,43 +448,38 @@ export default function App() {
     roomInfo.turn_order_player_ids[roomInfo.current_player_index] ===
       localPlayer.id;
 
-  const currentDisplayRoom = roomInfo; // Always use roomInfo as it's updated by realtime
-
-  // Determine if "Call Lie" button should be visible/enabled
   const canCallLie =
+    isMyTurn &&
     roomInfo &&
-    localPlayer &&
     roomInfo.status === "IN_PROGRESS" &&
     roomInfo.last_played_by_player_id &&
     roomInfo.last_played_by_player_id !== localPlayer.id &&
-    roomInfo.pile_cards_count > 0 && // Must have cards in pile to call lie
-    roomInfo.turn_order_player_ids[roomInfo.current_player_index] ===
-      localPlayer.id; // Only current player can call lie
+    roomInfo.pile_cards_count > 0;
 
-  // Determine if "Skip Turn" button should be visible/enabled
-  // Based on our discussion:
-  // - First player (or when pile is empty) MUST play, cannot skip.
-  // - Other players can skip if there are cards in the pile.
   const canSkipTurn = isMyTurn && roomInfo && roomInfo.pile_cards_count > 0;
+
+  // Determine if the declared rank input should be editable or displayed as fixed
+  const showDeclaredRankInput =
+    roomInfo?.pile_cards_count === 0 || roomInfo?.declared_rank === null;
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#0000ff" />
-        <Text style={styles.loadingText}>Loading...</Text>
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color="#4A90E2" />
+        <Text style={styles.loadingText}>جاري التحميل...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Error: {error}</Text>
+      <View style={styles.centeredContainer}>
+        <Text style={styles.errorText}>خطأ: {error}</Text>
         <TouchableOpacity
           style={styles.button}
           onPress={() => window.location.reload()}
         >
-          <Text style={styles.buttonText}>Reload App</Text>
+          <Text style={styles.buttonText}>إعادة تحميل التطبيق</Text>
         </TouchableOpacity>
       </View>
     );
@@ -495,143 +487,170 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollViewContent}>
-        <Text style={styles.title}>Lying Game</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollViewContent}
+        ref={scrollViewRef}
+      >
+        <Text style={styles.title}>لعبة الكذب</Text>
 
-        {/* Player ID for Debugging */}
         {localPlayer?.id && (
-          <Text style={styles.debugText}>Your Player ID: {localPlayer.id}</Text>
+          <Text style={styles.debugText}>معرف اللاعب: {localPlayer.id}</Text>
         )}
 
-        {/* Username Input and Change Button */}
+        {/* Profile Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Profile</Text>
+          <Text style={styles.sectionTitle}>ملفك الشخصي</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter Username"
+            placeholder="أدخل اسم المستخدم"
             value={usernameInput}
             onChangeText={setUsernameInput}
+            editable={!loading}
           />
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, loading && styles.disabledButton]}
             onPress={handleChangeUsername}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>Change Username</Text>
+            <Text style={styles.buttonText}>تغيير اسم المستخدم</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Lobby/Room Creation/Join UI */}
-        {!currentDisplayRoom?.id ? ( // Show lobby if not in a room
+        {/* Room Lobby / Details */}
+        {!roomInfo?.id ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Room Lobby</Text>
+            <Text style={styles.sectionTitle}>ردهة الغرفة</Text>
             <TouchableOpacity
-              style={styles.button}
+              style={[
+                styles.button,
+                (loading || !localPlayer?.id) && styles.disabledButton,
+              ]}
               onPress={handleCreateRoom}
               disabled={loading || !localPlayer?.id}
             >
-              <Text style={styles.buttonText}>Create New Room</Text>
+              <Text style={styles.buttonText}>إنشاء غرفة جديدة</Text>
             </TouchableOpacity>
 
             <View style={styles.divider} />
 
             <TextInput
               style={styles.input}
-              placeholder="Enter Room Code to Join"
+              placeholder="أدخل رمز الغرفة للانضمام"
               value={roomCodeInput}
               onChangeText={setRoomCodeInput}
               autoCapitalize="characters"
-              editable={!loading && !!localPlayer?.id} // Disable input while loading or if player ID not ready
+              editable={!loading && !!localPlayer?.id}
             />
             <TouchableOpacity
-              style={styles.button}
+              style={[
+                styles.button,
+                (loading || !localPlayer?.id) && styles.disabledButton,
+              ]}
               onPress={handleJoinRoom}
               disabled={loading || !localPlayer?.id}
             >
-              <Text style={styles.buttonText}>Join Room</Text>
+              <Text style={styles.buttonText}>الانضمام إلى الغرفة</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          // Show room info if in a room
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Room Details</Text>
+            <Text style={styles.sectionTitle}>تفاصيل الغرفة</Text>
             <Text style={styles.roomCodeText}>
-              Room Code: {currentDisplayRoom.room_code}
+              رمز الغرفة: {roomInfo.room_code}
             </Text>
             <Text style={styles.playerInfo}>
-              Your Username: {localPlayer?.username}
+              أنت {localPlayer?.is_host ? "المضيف" : "لاعب"}
             </Text>
             <Text style={styles.playerInfo}>
-              You are {localPlayer?.is_host ? "the Host" : "a Player"}
-            </Text>
-            <Text style={styles.playerInfo}>
-              Room Status: {currentDisplayRoom.status}
+              حالة الغرفة:{" "}
+              {roomInfo.status === "LOBBY" ? "في الردهة" : "قيد اللعب"}
             </Text>
 
-            {currentDisplayRoom.status === "IN_PROGRESS" && (
+            {roomInfo.status === "IN_PROGRESS" && (
               <Text style={styles.turnInfo}>
-                Current Turn:{" "}
+                الدور الحالي:{" "}
                 {
-                  currentDisplayRoom.players?.find(
+                  roomInfo.players?.find(
                     (p: Player) =>
                       p.id ===
-                      currentDisplayRoom.turn_order_player_ids[
-                        currentDisplayRoom.current_player_index
+                      roomInfo.turn_order_player_ids[
+                        roomInfo.current_player_index
                       ]
                   )?.username
                 }
-                {isMyTurn && " (YOUR TURN!)"}
+                {isMyTurn && " (دورك!)"}
               </Text>
             )}
 
             <Text style={styles.sectionSubTitle}>
-              Players in Room ({currentDisplayRoom.players?.length || 0}):
+              اللاعبون في الغرفة ({roomInfo.players?.length || 0}):
             </Text>
-            {currentDisplayRoom.players &&
-              currentDisplayRoom.players.map((p: Player) => (
+            {roomInfo.players &&
+              roomInfo.players.map((p: Player) => (
                 <Text key={p.id} style={styles.playerListItem}>
-                  - {p.username} {p.id === localPlayer?.id ? "(You)" : ""}{" "}
-                  {p.is_host ? "(Host)" : ""}{" "}
-                  {currentDisplayRoom.status === "IN_PROGRESS" &&
-                    `(${p.card_count} cards)`}
+                  - {p.username} {p.id === localPlayer?.id ? "(أنت)" : ""}{" "}
+                  {p.is_host ? "(المضيف)" : ""}{" "}
+                  {roomInfo.status === "IN_PROGRESS" &&
+                    `(${p.card_count} بطاقة)`}
                 </Text>
               ))}
 
-            {currentDisplayRoom.status === "LOBBY" && localPlayer?.is_host && (
+            {roomInfo.status === "LOBBY" && localPlayer?.is_host && (
               <TouchableOpacity
-                style={[styles.button, styles.startButton]}
+                style={[
+                  styles.button,
+                  styles.startButton,
+                  (roomInfo.players?.length < 2 ||
+                    roomInfo.players?.length > 4 ||
+                    loading) &&
+                    styles.disabledButton,
+                ]}
                 onPress={handleStartGame}
                 disabled={
-                  currentDisplayRoom.players?.length < 2 ||
-                  currentDisplayRoom.players?.length > 4 ||
+                  roomInfo.players?.length < 2 ||
+                  roomInfo.players?.length > 4 ||
                   loading
                 }
               >
                 <Text style={styles.buttonText}>
-                  Start Game ({currentDisplayRoom.players?.length}/4)
+                  بدء اللعبة ({roomInfo.players?.length}/4)
                 </Text>
               </TouchableOpacity>
             )}
 
-            {currentDisplayRoom.status === "IN_PROGRESS" && (
+            {/* Game In Progress UI */}
+            {roomInfo.status === "IN_PROGRESS" && (
               <View style={styles.gameInProgressInfo}>
-                <Text style={styles.sectionSubTitle}>Game State:</Text>
-                <Text>Pile Cards: {currentDisplayRoom.pile_cards_count}</Text>
-                {currentDisplayRoom.declared_rank && (
-                  <Text>
-                    Last Declared: {currentDisplayRoom.declared_rank} by{" "}
+                <Text style={styles.sectionSubTitle}>حالة اللعبة:</Text>
+                <Text style={styles.gameDetailText}>
+                  بطاقات الكومة: {roomInfo.pile_cards_count}
+                </Text>
+                {roomInfo.declared_rank && (
+                  <Text style={styles.gameDetailText}>
+                    آخر رتبة معلنة: {roomInfo.declared_rank} بواسطة{" "}
                     {
-                      currentDisplayRoom.players?.find(
+                      roomInfo.players?.find(
                         (p: Player) =>
-                          p.id === currentDisplayRoom.last_played_by_player_id
+                          p.id === roomInfo.last_played_by_player_id
                       )?.username
                     }
                   </Text>
                 )}
 
+                {/* Game Log */}
+                <Text style={styles.sectionSubTitle}>سجل اللعبة:</Text>
+                <View>
+                  {roomInfo.game_log &&
+                    roomInfo.game_log.map((log: string, index: number) => (
+                      <Text key={index} style={styles.gameLogText}>
+                        {log}
+                      </Text>
+                    ))}
+                </View>
+
                 {/* Player's Hand */}
                 <Text style={styles.sectionSubTitle}>
-                  Your Hand ({localPlayer?.card_count || 0} cards):
+                  يديك ({localPlayer?.card_count || 0} بطاقة):
                 </Text>
                 {localPlayer?.hand_cards &&
                 localPlayer.hand_cards.length > 0 ? (
@@ -649,8 +668,8 @@ export default function App() {
                         onPress={() => isMyTurn && handleCardPress(item)}
                         disabled={!isMyTurn || loading}
                       >
-                        <Text style={styles.cardText}>{item.rank}</Text>
-                        <Text style={styles.cardSuit}>
+                        <Text style={styles.cardRankText}>{item.rank}</Text>
+                        <Text style={styles.cardSuitText}>
                           {item.suit === "HEARTS"
                             ? "❤️"
                             : item.suit === "DIAMONDS"
@@ -669,70 +688,97 @@ export default function App() {
                     contentContainerStyle={styles.handContainer}
                   />
                 ) : (
-                  <Text style={styles.noCardsText}>No cards in hand.</Text>
+                  <Text style={styles.noCardsText}>
+                    لا توجد بطاقات في اليد.
+                  </Text>
                 )}
 
                 {/* Play Cards UI */}
                 {isMyTurn && (
                   <View style={styles.playControls}>
-                    <Text style={styles.sectionSubTitle}>Play Cards:</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Declare Rank (e.g., ACE, KING)"
-                      value={declaredRankInput}
-                      onChangeText={setDeclaredRankInput}
-                      autoCapitalize="characters"
-                      editable={!loading} // Disable input while loading
-                    />
+                    <Text style={styles.sectionSubTitle}>العب البطاقات:</Text>
+                    {showDeclaredRankInput ? (
+                      <TextInput
+                        style={styles.input}
+                        placeholder="أعلن الرتبة (مثال: ACE, KING)"
+                        value={declaredRankInput}
+                        onChangeText={setDeclaredRankInput}
+                        autoCapitalize="characters"
+                        editable={!loading}
+                      />
+                    ) : (
+                      <Text style={styles.declaredRankFixedText}>
+                        الرتبة المعلنة: {roomInfo.declared_rank}
+                      </Text>
+                    )}
+
                     <TouchableOpacity
                       style={[
                         styles.button,
-                        selectedCards.length === 0 || !declaredRankInput
-                          ? styles.disabledButton
-                          : {},
+                        (selectedCards.length === 0 ||
+                          (showDeclaredRankInput &&
+                            !declaredRankInput.trim()) ||
+                          loading) &&
+                          styles.disabledButton,
                       ]}
                       onPress={handlePlayCards}
                       disabled={
                         selectedCards.length === 0 ||
-                        !declaredRankInput ||
+                        (showDeclaredRankInput && !declaredRankInput.trim()) ||
                         loading
                       }
                     >
                       <Text style={styles.buttonText}>
-                        Play {selectedCards.length} Card(s)
+                        العب {selectedCards.length} بطاقة (بطاقات)
                       </Text>
                     </TouchableOpacity>
                   </View>
                 )}
 
                 {/* Call Lie / Skip Turn Buttons */}
-                {canCallLie && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.callLieButton]}
-                    onPress={handleCallLie}
-                    disabled={loading}
-                  >
-                    <Text style={styles.buttonText}>Call Lie!</Text>
-                  </TouchableOpacity>
-                )}
-                {isMyTurn && canSkipTurn && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.skipTurnButton]}
-                    onPress={handleSkipTurn}
-                    disabled={loading}
-                  >
-                    <Text style={styles.buttonText}>Skip Turn</Text>
-                  </TouchableOpacity>
+                {isMyTurn && (
+                  <View style={styles.actionButtonsContainer}>
+                    {canCallLie && (
+                      <TouchableOpacity
+                        style={[
+                          styles.button,
+                          styles.callLieButton,
+                          loading && styles.disabledButton,
+                        ]}
+                        onPress={handleCallLie}
+                        disabled={loading}
+                      >
+                        <Text style={styles.buttonText}>اكشف الكذب!</Text>
+                      </TouchableOpacity>
+                    )}
+                    {canSkipTurn && (
+                      <TouchableOpacity
+                        style={[
+                          styles.button,
+                          styles.skipTurnButton,
+                          loading && styles.disabledButton,
+                        ]}
+                        onPress={handleSkipTurn}
+                        disabled={loading}
+                      >
+                        <Text style={styles.buttonText}>تخطي الدور</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 )}
               </View>
             )}
 
             <TouchableOpacity
-              style={[styles.button, styles.leaveButton]}
+              style={[
+                styles.button,
+                styles.leaveButton,
+                loading && styles.disabledButton,
+              ]}
               onPress={handleLeaveRoom}
               disabled={loading}
             >
-              <Text style={styles.buttonText}>Leave Room</Text>
+              <Text style={styles.buttonText}>مغادرة الغرفة</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -744,31 +790,38 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f4f7",
-    paddingTop: 50,
+    backgroundColor: "#1a2a3a", // Darker background for elegance
+    paddingTop: 40,
+  },
+  centeredContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#1a2a3a",
   },
   scrollViewContent: {
     flexGrow: 1,
     alignItems: "center",
-    paddingBottom: 20,
+    paddingBottom: 30,
   },
   loadingText: {
     marginTop: 20,
     fontSize: 18,
-    color: "#555",
+    color: "#E0E0E0",
   },
   title: {
-    fontSize: 32,
+    fontSize: 38,
     fontWeight: "bold",
-    color: "#333",
+    color: "#FFD700", // Gold color for title
     marginBottom: 30,
-    textShadowColor: "rgba(0,0,0,0.1)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    textShadowColor: "rgba(0,0,0,0.3)",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 5,
+    fontFamily: "Arial", // A common, clean font
   },
   message: {
     fontSize: 16,
-    color: "#007bff",
+    color: "#87CEEB", // Sky blue for messages
     marginBottom: 20,
     textAlign: "center",
     paddingHorizontal: 20,
@@ -780,173 +833,245 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   section: {
-    width: "90%",
-    maxWidth: 400,
-    backgroundColor: "#fff",
-    borderRadius: 15,
+    width: width * 0.9, // 90% of screen width
+    maxWidth: 450,
+    backgroundColor: "#2b3b4b", // Slightly lighter dark for sections
+    borderRadius: 20,
     padding: 25,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 8,
-    marginBottom: 20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 15,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: "#4a90e2", // Subtle border
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "bold",
-    color: "#333",
-    marginBottom: 15,
+    color: "#FFD700",
+    marginBottom: 20,
+    textShadowColor: "rgba(0,0,0,0.2)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   sectionSubTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#555",
-    marginTop: 10,
-    marginBottom: 5,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#ADD8E6", // Light blue for subtitles
+    marginTop: 15,
+    marginBottom: 10,
+    textAlign: "right", // For Arabic text
+    width: "100%",
   },
   input: {
     width: "100%",
     height: 50,
-    borderColor: "#ddd",
+    borderColor: "#5a6b7b", // Darker border for inputs
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 15,
     marginBottom: 15,
     fontSize: 16,
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "#3a4a5a", // Darker background for inputs
+    color: "#E0E0E0", // Light text color
+    textAlign: "right", // For Arabic input
   },
   button: {
     width: "100%",
     paddingVertical: 15,
-    backgroundColor: "#007bff",
-    borderRadius: 10,
+    backgroundColor: "#4A90E2", // Primary blue button
+    borderRadius: 12,
     alignItems: "center",
     marginBottom: 10,
-    shadowColor: "#007bff",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowColor: "#4A90E2",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 10,
+    transitionDuration: "0.3s", // For web-like hover effect
   },
   buttonText: {
     color: "#fff",
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   disabledButton: {
-    backgroundColor: "#a0c8ff", // Lighter blue for disabled
+    backgroundColor: "#607d8b", // Muted grey for disabled
+    shadowOpacity: 0.1,
+    elevation: 2,
   },
   divider: {
     width: "80%",
     height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 20,
+    backgroundColor: "#5a6b7b",
+    marginVertical: 25,
   },
   roomCodeText: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "bold",
-    color: "#444",
-    marginBottom: 10,
+    color: "#FFD700",
+    marginBottom: 15,
     textAlign: "center",
   },
   playerInfo: {
     fontSize: 16,
-    color: "#333",
-    marginBottom: 5,
+    color: "#E0E0E0",
+    marginBottom: 8,
     textAlign: "center",
   },
   playerListItem: {
-    fontSize: 14,
-    color: "#555",
-    textAlign: "left",
+    fontSize: 15,
+    color: "#B0C4DE", // Light steel blue
+    textAlign: "right",
     width: "100%",
-    paddingLeft: 10,
-    paddingVertical: 2,
+    paddingRight: 10,
+    paddingVertical: 3,
   },
   startButton: {
-    backgroundColor: "#28a745",
-    marginTop: 20,
+    backgroundColor: "#28a745", // Green for start
     shadowColor: "#28a745",
+    marginTop: 25,
   },
   leaveButton: {
-    backgroundColor: "#dc3545",
-    marginTop: 20,
+    backgroundColor: "#dc3545", // Red for leave
     shadowColor: "#dc3545",
+    marginTop: 25,
   },
   gameInProgressInfo: {
-    marginTop: 20,
+    marginTop: 25,
     width: "100%",
-    paddingTop: 10,
+    paddingTop: 20,
     borderTopWidth: 1,
-    borderTopColor: "#eee",
+    borderTopColor: "#5a6b7b",
   },
   turnInfo: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: "bold",
-    color: "#007bff",
-    marginBottom: 15,
+    color: "#87CEEB",
+    marginBottom: 20,
     textAlign: "center",
+    textShadowColor: "rgba(0,0,0,0.2)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  gameDetailText: {
+    fontSize: 16,
+    color: "#E0E0E0",
+    marginBottom: 5,
+    textAlign: "right",
+  },
+  gameLogContainer: {
+    maxHeight: 180, // Increased height for more log visibility
+    width: "100%",
+    backgroundColor: "#3a4a5a",
+    borderRadius: 10,
+    padding: 15,
+    marginTop: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#5a6b7b",
+    overflow: "scroll",
+  },
+  gameLogContent: {
+    paddingBottom: 5, // Ensure scroll to end works well
+  },
+  gameLogText: {
+    fontSize: 14,
+    color: "#B0C4DE",
+    marginBottom: 5,
+    textAlign: "right",
   },
   handContainer: {
     flexDirection: "row",
-    flexWrap: "wrap", // Allow cards to wrap to the next line
+    flexWrap: "wrap",
     justifyContent: "center",
-    marginTop: 10,
-    paddingVertical: 5,
+    marginTop: 15,
+    paddingVertical: 10,
+    width: "100%",
   },
   card: {
-    width: 60,
-    height: 90,
+    width: width * 0.18, // Responsive card width
+    height: width * 0.25, // Aspect ratio for cards
     backgroundColor: "#fff",
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 10,
+    borderWidth: 2,
     borderColor: "#ccc",
-    margin: 5,
+    margin: width * 0.015, // Responsive margin
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 1, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
+    shadowOffset: { width: 2, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 6,
   },
   selectedCard: {
-    borderColor: "#007bff",
+    borderColor: "#FFD700", // Gold border for selected
     borderWidth: 3,
-    backgroundColor: "#e6f2ff", // Lighter background for selected
+    backgroundColor: "#FFFACD", // Light goldenrod yellow
   },
-  cardText: {
-    fontSize: 20,
+  cardRankText: {
+    fontSize: width * 0.05, // Responsive font size
     fontWeight: "bold",
     color: "#333",
   },
-  cardSuit: {
-    fontSize: 18,
+  cardSuitText: {
+    fontSize: width * 0.04, // Responsive font size
     color: "#555",
   },
   noCardsText: {
     fontSize: 16,
-    color: "#777",
+    color: "#B0C4DE",
     textAlign: "center",
-    marginTop: 10,
+    marginTop: 15,
   },
   playControls: {
     width: "100%",
-    marginTop: 20,
+    marginTop: 25,
     borderTopWidth: 1,
-    borderTopColor: "#eee",
-    paddingTop: 15,
+    borderTopColor: "#5a6b7b",
+    paddingTop: 20,
+  },
+  declaredRankFixedText: {
+    width: "100%",
+    height: 50,
+    borderColor: "#5a6b7b",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    marginBottom: 15,
+    fontSize: 16,
+    backgroundColor: "#3a4a5a",
+    color: "#FFD700", // Gold for fixed declared rank
+    textAlign: "center",
+    lineHeight: 50,
+    fontWeight: "bold",
+  },
+  actionButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+    marginTop: 20,
   },
   callLieButton: {
-    backgroundColor: "#ffc107", // Yellow for call lie
-    shadowColor: "#ffc107",
-    marginTop: 15,
+    backgroundColor: "#FFC107", // Amber for call lie
+    shadowColor: "#FFC107",
+    flex: 1,
+    marginRight: 8,
   },
   skipTurnButton: {
-    backgroundColor: "#6c757d", // Grey for skip turn
+    backgroundColor: "#6c757d", // Dark grey for skip turn
     shadowColor: "#6c757d",
-    marginTop: 10,
+    flex: 1,
+    marginLeft: 8,
+  },
+  errorText: {
+    fontSize: 18,
+    color: "#FF6347", // Tomato red for errors
+    textAlign: "center",
+    marginBottom: 20,
   },
 });
