@@ -1,8 +1,24 @@
-import supabase from './supabase';
+// services/room.ts
+
+import supabase from "./supabase";
 declare function uuidv4(): string;
 
-const ranks = ['ACE', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'JACK', 'QUEEN', 'KING'];
-const suits = ['HEARTS', 'DIAMONDS', 'CLUBS', 'SPADES'];
+const ranks = [
+  "ACE",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "JACK",
+  "QUEEN",
+  "KING",
+];
+const suits = ["HEARTS", "DIAMONDS", "CLUBS", "SPADES"];
 
 function createDeck() {
   const deck = [];
@@ -23,11 +39,17 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 // Helper to get the next player's index
-function getNextPlayerIndex(currentIndex: number, totalPlayers: number): number {
+function getNextPlayerIndex(
+  currentIndex: number,
+  totalPlayers: number
+): number {
   return (currentIndex + 1) % totalPlayers;
 }
 
-export async function createRoom(playerId: string, username: string): Promise<{ room: any; player: any }> {
+export async function createRoom(
+  playerId: string,
+  username: string
+): Promise<{ room: any; player: any }> {
   if (!playerId) {
     throw new Error("Player ID is required to create a room.");
   }
@@ -44,14 +66,14 @@ export async function createRoom(playerId: string, username: string): Promise<{ 
       is_host: true,
       hand_cards: [],
       card_count: 0,
-    }
+    },
   ];
 
   const { data: newRoom, error: roomError } = await supabase
-    .from('room')
+    .from("room")
     .insert({
       room_code: newRoomCode,
-      status: 'LOBBY',
+      status: "LOBBY",
       host_player_id: playerId,
       turn_order_player_ids: [playerId],
       current_player_index: 0,
@@ -64,6 +86,7 @@ export async function createRoom(playerId: string, username: string): Promise<{ 
       last_player_to_play_id: null, // New: Track who last played cards
       consecutive_skips_count: 0, // New: Track consecutive skips
       game_log: [], // New: For game notifications
+      winner_player_id: null, // New: To store the winner's ID
     })
     .select()
     .single();
@@ -77,7 +100,11 @@ export async function createRoom(playerId: string, username: string): Promise<{ 
   return { room: newRoom, player: hostPlayerRecord };
 }
 
-export async function joinRoom(roomCode: string, playerId: string, username: string): Promise<{ room: any; player: any }> {
+export async function joinRoom(
+  roomCode: string,
+  playerId: string,
+  username: string
+): Promise<{ room: any; player: any }> {
   if (!roomCode) {
     throw new Error("Room Code is required to join a room.");
   }
@@ -89,19 +116,19 @@ export async function joinRoom(roomCode: string, playerId: string, username: str
   }
 
   const { data: room, error: fetchError } = await supabase
-    .from('room')
-    .select('id, room_code, status, players, turn_order_player_ids, game_log') // Select game_log
-    .eq('room_code', roomCode)
+    .from("room")
+    .select("id, room_code, status, players, turn_order_player_ids, game_log") // Select game_log
+    .eq("room_code", roomCode)
     .single();
 
   if (fetchError) {
-    if (fetchError.code === 'PGRST116') {
+    if (fetchError.code === "PGRST116") {
       throw new Error(`Room with code '${roomCode}' not found.`);
     }
     throw new Error(`Failed to fetch room: ${fetchError.message}`);
   }
 
-  if (room.status !== 'LOBBY') {
+  if (room.status !== "LOBBY") {
     throw new Error(`Cannot join room. Room status is '${room.status}'.`);
   }
 
@@ -110,9 +137,13 @@ export async function joinRoom(roomCode: string, playerId: string, username: str
     throw new Error("Room is full. Cannot join.");
   }
 
-  const isPlayerAlreadyInRoom = room.players.some((p: any) => p.id === playerId);
+  const isPlayerAlreadyInRoom = room.players.some(
+    (p: any) => p.id === playerId
+  );
   if (isPlayerAlreadyInRoom) {
-    const existingPlayerRecord = room.players.find((p: any) => p.id === playerId);
+    const existingPlayerRecord = room.players.find(
+      (p: any) => p.id === playerId
+    );
     return { room: room, player: existingPlayerRecord };
   }
 
@@ -131,13 +162,13 @@ export async function joinRoom(roomCode: string, playerId: string, username: str
   const updatedGameLog = [...room.game_log, `${username} انضم إلى الغرفة.`];
 
   const { data: updatedRoom, error: updateError } = await supabase
-    .from('room')
+    .from("room")
     .update({
       players: updatedPlayers,
       turn_order_player_ids: updatedTurnOrderPlayerIds,
       game_log: updatedGameLog, // Update game log
     })
-    .eq('id', room.id)
+    .eq("id", room.id)
     .select()
     .single();
 
@@ -148,7 +179,10 @@ export async function joinRoom(roomCode: string, playerId: string, username: str
   return { room: updatedRoom, player: newPlayer };
 }
 
-export async function startGame(roomId: string, hostPlayerId: string): Promise<any> {
+export async function startGame(
+  roomId: string,
+  hostPlayerId: string
+): Promise<any> {
   if (!roomId) {
     throw new Error("Room ID is required to start the game.");
   }
@@ -157,9 +191,9 @@ export async function startGame(roomId: string, hostPlayerId: string): Promise<a
   }
 
   const { data: room, error: fetchError } = await supabase
-    .from('room')
-    .select('*')
-    .eq('id', roomId)
+    .from("room")
+    .select("*")
+    .eq("id", roomId)
     .single();
 
   if (fetchError) {
@@ -169,17 +203,26 @@ export async function startGame(roomId: string, hostPlayerId: string): Promise<a
   if (room.host_player_id !== hostPlayerId) {
     throw new Error("Only the host can start the game.");
   }
-  if (room.status !== 'LOBBY') {
+  if (room.status !== "LOBBY") {
     throw new Error(`Cannot start game. Room status is '${room.status}'.`);
   }
 
   const numPlayers = room.players.length;
   if (numPlayers < 2 || numPlayers > 4) {
-    throw new Error(`Lying Game requires 2 to 4 players to start. Current players: ${numPlayers}.`);
+    throw new Error(
+      `Lying Game requires 2 to 4 players to start. Current players: ${numPlayers}.`
+    );
   }
 
   const fullDeck = shuffleArray(createDeck());
-  const cardsPerPlayer = Math.floor(fullDeck.length / numPlayers);
+  const cardsPerPlayer = 13; // Each player gets 13 cards
+
+  // Check if there are enough cards in the deck for all players
+  if (numPlayers * cardsPerPlayer > fullDeck.length) {
+    throw new Error(
+      "Not enough cards in the deck to deal 13 cards to each player."
+    );
+  }
 
   const shuffledPlayerIds = shuffleArray(room.players.map((p: any) => p.id));
 
@@ -196,13 +239,12 @@ export async function startGame(roomId: string, hostPlayerId: string): Promise<a
 
   // Add game start message to game log
   const hostPlayer = room.players.find((p: any) => p.id === hostPlayerId);
-  const updatedGameLog = [...room.game_log, `${hostPlayer?.username || 'المضيف'} بدأ اللعبة.`];
-
+  const updatedGameLog = [`${hostPlayer?.username || "المضيف"} بدأ اللعبة.`]; // Reset log on game start
 
   const { data: updatedRoom, error: updateError } = await supabase
-    .from('room')
+    .from("room")
     .update({
-      status: 'IN_PROGRESS',
+      status: "IN_PROGRESS",
       turn_order_player_ids: shuffledPlayerIds,
       current_player_index: 0,
       pile_cards_count: 0,
@@ -214,8 +256,9 @@ export async function startGame(roomId: string, hostPlayerId: string): Promise<a
       last_player_to_play_id: null, // Reset on game start
       consecutive_skips_count: 0, // Reset on game start
       game_log: updatedGameLog, // Update game log
+      winner_player_id: null, // Reset winner on game start
     })
-    .eq('id', roomId)
+    .eq("id", roomId)
     .select()
     .single();
 
@@ -244,21 +287,24 @@ export async function playCards(
   }
 
   const { data: room, error: fetchError } = await supabase
-    .from('room')
-    .select('*')
-    .eq('id', roomId)
+    .from("room")
+    .select("*")
+    .eq("id", roomId)
     .single();
 
   if (fetchError) {
     throw new Error(`Failed to fetch room: ${fetchError.message}`);
   }
 
-  if (room.status !== 'IN_PROGRESS') {
-    throw new Error(`Cannot play cards. Game is not in progress (status: ${room.status}).`);
+  if (room.status !== "IN_PROGRESS") {
+    throw new Error(
+      `Cannot play cards. Game is not in progress (status: ${room.status}).`
+    );
   }
 
   // Check if it's the current player's turn
-  const currentPlayerIdInTurnOrder = room.turn_order_player_ids[room.current_player_index];
+  const currentPlayerIdInTurnOrder =
+    room.turn_order_player_ids[room.current_player_index];
   if (currentPlayerIdInTurnOrder !== playerId) {
     throw new Error("It's not your turn to play cards.");
   }
@@ -270,12 +316,17 @@ export async function playCards(
       const playedCardsActual = [];
 
       for (const cardToPlay of cardsToPlay) {
-        const cardIndex = currentHand.findIndex(card => card.rank === cardToPlay.rank && card.suit === cardToPlay.suit);
+        const cardIndex = currentHand.findIndex(
+          (card) =>
+            card.rank === cardToPlay.rank && card.suit === cardToPlay.suit
+        );
         if (cardIndex > -1) {
           currentHand.splice(cardIndex, 1); // Remove one instance of the card
           playedCardsActual.push(cardToPlay);
         } else {
-          throw new Error(`Player does not have card: ${cardToPlay.rank}-${cardToPlay.suit}`);
+          throw new Error(
+            `Player does not have card: ${cardToPlay.rank}-${cardToPlay.suit}`
+          );
         }
       }
 
@@ -288,25 +339,43 @@ export async function playCards(
     return p;
   });
 
-  // Check for win condition (player has 0 cards)
   const playerWhoPlayed = updatedPlayers.find((p: any) => p.id === playerId);
+  let newRoomStatus = room.status;
+  let newWinnerPlayerId = room.winner_player_id;
+
+  // Check for win condition (player has 0 cards)
   if (playerWhoPlayed && playerWhoPlayed.card_count === 0) {
-    // TODO: Implement game end logic here, e.g., set room status to 'COMPLETED'
-    console.log(`${playerWhoPlayed.username} has no cards left!`);
-    // For now, the game continues, but this player is out of cards.
-    // You'd typically remove them from turn_order_player_ids or mark them as finished.
+    newRoomStatus = "COMPLETED";
+    newWinnerPlayerId = playerId;
   }
 
   const updatedPileCards = [...room.pile_cards, ...cardsToPlay];
-  const nextPlayerIndex = getNextPlayerIndex(room.current_player_index, room.turn_order_player_ids.length);
+  const nextPlayerIndex = getNextPlayerIndex(
+    room.current_player_index,
+    room.turn_order_player_ids.length
+  );
 
   // Add play message to game log
-  const playerName = room.players.find((p: any) => p.id === playerId)?.username || 'لاعب غير معروف';
-  const playMessage = `${playerName} لعب ${cardsToPlay.length} بطاقة (بطاقات) معلناً أنها ${declaredRank}.`;
-  const updatedGameLog = [...room.game_log, playMessage];
+  const playerName =
+    room.players.find((p: any) => p.id === playerId)?.username ||
+    "لاعب غير معروف";
+  let updatedGameLog = room.game_log;
+
+  // If pile was empty before this play, it's a new "round" sequence, so clear log
+  if (room.pile_cards_count === 0) {
+    updatedGameLog = []; // Clear log for new round
+  }
+  updatedGameLog.push(
+    `${playerName} لعب ${cardsToPlay.length} بطاقة (بطاقات) معلناً أنها ${declaredRank}.`
+  );
+
+  // Add win message if game ended
+  if (newRoomStatus === "COMPLETED") {
+    updatedGameLog.push(`${playerName} فاز باللعبة!`);
+  }
 
   const { data: updatedRoom, error: updateError } = await supabase
-    .from('room')
+    .from("room")
     .update({
       players: updatedPlayers,
       pile_cards: updatedPileCards,
@@ -318,8 +387,10 @@ export async function playCards(
       last_player_to_play_id: playerId, // Update last player to play
       consecutive_skips_count: 0, // Reset skips after a play
       game_log: updatedGameLog, // Update game log
+      status: newRoomStatus, // Update game status
+      winner_player_id: newWinnerPlayerId, // Set winner
     })
-    .eq('id', roomId)
+    .eq("id", roomId)
     .select()
     .single();
 
@@ -336,21 +407,24 @@ export async function skipTurn(roomId: string, playerId: string): Promise<any> {
   }
 
   const { data: room, error: fetchError } = await supabase
-    .from('room')
-    .select('*')
-    .eq('id', roomId)
+    .from("room")
+    .select("*")
+    .eq("id", roomId)
     .single();
 
   if (fetchError) {
     throw new Error(`Failed to fetch room: ${fetchError.message}`);
   }
 
-  if (room.status !== 'IN_PROGRESS') {
-    throw new Error(`Cannot skip turn. Game is not in progress (status: ${room.status}).`);
+  if (room.status !== "IN_PROGRESS") {
+    throw new Error(
+      `Cannot skip turn. Game is not in progress (status: ${room.status}).`
+    );
   }
 
   // Check if it's the current player's turn
-  const currentPlayerIdInTurnOrder = room.turn_order_player_ids[room.current_player_index];
+  const currentPlayerIdInTurnOrder =
+    room.turn_order_player_ids[room.current_player_index];
   if (currentPlayerIdInTurnOrder !== playerId) {
     throw new Error("It's not your turn to skip.");
   }
@@ -358,39 +432,54 @@ export async function skipTurn(roomId: string, playerId: string): Promise<any> {
   // A player can only skip if there are cards in the pile.
   // If the pile is empty, the current player MUST play.
   if (room.pile_cards_count === 0) {
-    throw new Error("Cannot skip turn when the pile is empty. You must play a card.");
+    throw new Error(
+      "Cannot skip turn when the pile is empty. You must play a card."
+    );
   }
 
   const numPlayers = room.players.length;
-  let nextPlayerIndex = getNextPlayerIndex(room.current_player_index, numPlayers);
+  let nextPlayerIndex = getNextPlayerIndex(
+    room.current_player_index,
+    numPlayers
+  );
   let updatedConsecutiveSkips = room.consecutive_skips_count + 1;
   let newDeclaredRank = room.declared_rank; // Keep current declared rank by default
 
   // Add skip message to game log
-  const playerName = room.players.find((p: any) => p.id === playerId)?.username || 'لاعب غير معروف';
-  const skipMessage = `${playerName} تخطى دوره.`;
-  const updatedGameLog = [...room.game_log, skipMessage];
+  const playerName =
+    room.players.find((p: any) => p.id === playerId)?.username ||
+    "لاعب غير معروف";
+  const updatedGameLog = [...room.game_log, `${playerName} تخطى دوره.`];
 
   // Logic for when all other players have skipped and turn returns to last player to play
-  if (updatedConsecutiveSkips === numPlayers - 1 && room.last_player_to_play_id) {
+  if (
+    updatedConsecutiveSkips === numPlayers - 1 &&
+    room.last_player_to_play_id
+  ) {
     // All players except the one who last played have skipped.
     // Turn returns to the last player who played, and they must declare a new rank.
-    nextPlayerIndex = room.turn_order_player_ids.indexOf(room.last_player_to_play_id);
+    nextPlayerIndex = room.turn_order_player_ids.indexOf(
+      room.last_player_to_play_id
+    );
     updatedConsecutiveSkips = 0; // Reset skips
     newDeclaredRank = null; // Reset declared rank, forcing new declaration
-    updatedGameLog.push(`عاد الدور إلى ${room.players.find(p => p.id === room.last_player_to_play_id)?.username || 'اللاعب السابق'}. يجب عليه اللعب وإعلان رتبة جديدة.`);
+    updatedGameLog.push(
+      `عاد الدور إلى ${
+        room.players.find((p) => p.id === room.last_player_to_play_id)
+          ?.username || "اللاعب السابق"
+      }. يجب عليه اللعب وإعلان رتبة جديدة.`
+    );
   }
 
-
   const { data: updatedRoom, error: updateError } = await supabase
-    .from('room')
+    .from("room")
     .update({
       current_player_index: nextPlayerIndex, // Advance turn
       consecutive_skips_count: updatedConsecutiveSkips, // Update skip count
       declared_rank: newDeclaredRank, // Potentially reset declared rank
       game_log: updatedGameLog, // Update game log
     })
-    .eq('id', roomId)
+    .eq("id", roomId)
     .select()
     .single();
 
@@ -401,27 +490,36 @@ export async function skipTurn(roomId: string, playerId: string): Promise<any> {
   return updatedRoom;
 }
 
-
-export async function callLie(roomId: string, callingPlayerId: string): Promise<any> {
+export async function callLie(
+  roomId: string,
+  callingPlayerId: string
+): Promise<any> {
   if (!roomId || !callingPlayerId) {
     throw new Error("Missing required parameters for calling a lie.");
   }
 
   const { data: room, error: fetchError } = await supabase
-    .from('room')
-    .select('*')
-    .eq('id', roomId)
+    .from("room")
+    .select("*")
+    .eq("id", roomId)
     .single();
 
   if (fetchError) {
     throw new Error(`Failed to fetch room: ${fetchError.message}`);
   }
 
-  if (room.status !== 'IN_PROGRESS') {
-    throw new Error(`Cannot call lie. Game is not in progress (status: ${room.status}).`);
+  if (room.status !== "IN_PROGRESS") {
+    throw new Error(
+      `Cannot call lie. Game is not in progress (status: ${room.status}).`
+    );
   }
 
-  if (!room.last_played_by_player_id || room.pile_cards_count === 0 || !room.last_played_cards_actual || !room.declared_rank) {
+  if (
+    !room.last_played_by_player_id ||
+    room.pile_cards_count === 0 ||
+    !room.last_played_cards_actual ||
+    !room.declared_rank
+  ) {
     throw new Error("No cards have been played to call a lie on.");
   }
 
@@ -431,20 +529,30 @@ export async function callLie(roomId: string, callingPlayerId: string): Promise<
   }
 
   // Determine if the lie was successful
-  const actualRankOfPlayedCards = room.last_played_cards_actual.every((card: any) => card.rank === room.declared_rank);
+  const actualRankOfPlayedCards = room.last_played_cards_actual.every(
+    (card: any) => card.rank === room.declared_rank
+  );
   const playerWhoPlayedId = room.last_played_by_player_id;
   const pileCards = room.pile_cards; // Get all cards from the pile
 
   let updatedPlayers = room.players;
   let nextPlayerIndex: number;
   let lieCallMessage: string;
+  let newRoomStatus = room.status;
+  let newWinnerPlayerId = room.winner_player_id;
 
-  const callingPlayerName = room.players.find((p: any) => p.id === callingPlayerId)?.username || 'لاعب غير معروف';
-  const playedPlayerName = room.players.find((p: any) => p.id === playerWhoPlayedId)?.username || 'لاعب غير معروف';
+  const callingPlayerName =
+    room.players.find((p: any) => p.id === callingPlayerId)?.username ||
+    "لاعب غير معروف";
+  const playedPlayerName =
+    room.players.find((p: any) => p.id === playerWhoPlayedId)?.username ||
+    "لاعب غير معروف";
 
-  if (!actualRankOfPlayedCards) { // The player who played *lied* (caller was correct)
+  if (!actualRankOfPlayedCards) {
+    // The player who played *lied* (caller was correct)
     updatedPlayers = updatedPlayers.map((p: any) => {
-      if (p.id === playerWhoPlayedId) { // Lying player takes the pile
+      if (p.id === playerWhoPlayedId) {
+        // Lying player takes the pile
         const newHand = [...p.hand_cards, ...pileCards];
         return {
           ...p,
@@ -457,10 +565,11 @@ export async function callLie(roomId: string, callingPlayerId: string): Promise<
     // The calling player (who was correct) gets the next turn
     nextPlayerIndex = room.turn_order_player_ids.indexOf(callingPlayerId);
     lieCallMessage = `${callingPlayerName} اتهم ${playedPlayerName} بالكذب! ${playedPlayerName} كان يكذب وأخذ جميع البطاقات. الدور الآن لـ ${callingPlayerName}.`;
-
-  } else { // The player who played *told the truth* (caller was wrong)
+  } else {
+    // The player who played *told the truth* (caller was wrong)
     updatedPlayers = updatedPlayers.map((p: any) => {
-      if (p.id === callingPlayerId) { // Caller takes the pile
+      if (p.id === callingPlayerId) {
+        // Caller takes the pile
         const newHand = [...p.hand_cards, ...pileCards];
         return {
           ...p,
@@ -478,15 +587,16 @@ export async function callLie(roomId: string, callingPlayerId: string): Promise<
   // Check for win condition after taking cards (unlikely, but possible if pile was small)
   updatedPlayers.forEach((p: any) => {
     if (p.card_count === 0) {
-      // TODO: Implement game end logic here, e.g., set room status to 'COMPLETED'
-      console.log(`${p.username} has no cards left after taking pile!`);
+      newRoomStatus = "COMPLETED";
+      newWinnerPlayerId = p.id;
+      lieCallMessage += ` ${p.username} فاز باللعبة!`; // Append win message
     }
   });
 
-  const updatedGameLog = [...room.game_log, lieCallMessage];
+  const updatedGameLog = [lieCallMessage]; // Reset log after a lie call and add the new message
 
   const { data: updatedRoom, error: updateError } = await supabase
-    .from('room')
+    .from("room")
     .update({
       players: updatedPlayers,
       pile_cards: [], // Reset pile
@@ -497,13 +607,141 @@ export async function callLie(roomId: string, callingPlayerId: string): Promise<
       current_player_index: nextPlayerIndex, // Set next player based on lie outcome
       consecutive_skips_count: 0, // Reset skips after a lie call
       game_log: updatedGameLog, // Update game log
+      status: newRoomStatus, // Update game status
+      winner_player_id: newWinnerPlayerId, // Set winner
     })
-    .eq('id', roomId)
+    .eq("id", roomId)
     .select()
     .single();
 
   if (updateError) {
     throw new Error(`Failed to call lie: ${updateError.message}`);
+  }
+
+  return updatedRoom;
+}
+
+export async function discardQuads(
+  roomId: string,
+  playerId: string,
+  rankToDiscard: string
+): Promise<any> {
+  if (!roomId || !playerId || !rankToDiscard) {
+    throw new Error("Missing required parameters for discarding cards.");
+  }
+  if (!ranks.includes(rankToDiscard)) {
+    throw new Error("Invalid rank to discard.");
+  }
+
+  const { data: room, error: fetchError } = await supabase
+    .from("room")
+    .select("*")
+    .eq("id", roomId)
+    .single();
+
+  if (fetchError) {
+    throw new Error(`Failed to fetch room: ${fetchError.message}`);
+  }
+
+  if (room.status !== "IN_PROGRESS") {
+    throw new Error(
+      `Cannot discard cards. Game is not in progress (status: ${room.status}).`
+    );
+  }
+
+  // Check if it's the current player's turn
+  const currentPlayerIdInTurnOrder =
+    room.turn_order_player_ids[room.current_player_index];
+  if (currentPlayerIdInTurnOrder !== playerId) {
+    throw new Error("It's not your turn to discard cards.");
+  }
+
+  let updatedPlayers = room.players.map((p: any) => {
+    if (p.id === playerId) {
+      let currentHand = [...p.hand_cards];
+      const cardsToRemove: Card[] = [];
+      const suitsFound: Set<string> = new Set();
+
+      // Find all cards of the specified rank
+      const cardsOfRank = currentHand.filter(
+        (card) => card.rank === rankToDiscard
+      );
+
+      // Check if there are exactly 4 cards of that rank, one for each suit
+      if (cardsOfRank.length === 4) {
+        let hasAllSuits = true;
+        for (const card of cardsOfRank) {
+          if (suitsFound.has(card.suit)) {
+            hasAllSuits = false; // Found duplicate suit for the same rank, not a true quad
+            break;
+          }
+          suitsFound.add(card.suit);
+        }
+
+        if (hasAllSuits && suitsFound.size === 4) {
+          // Remove these 4 cards from the hand
+          currentHand = currentHand.filter(
+            (card) => card.rank !== rankToDiscard
+          );
+          cardsToRemove.push(...cardsOfRank); // Store for logging
+        } else {
+          throw new Error(
+            `Player does not have a complete set of four ${rankToDiscard}s (one of each suit).`
+          );
+        }
+      } else {
+        throw new Error(
+          `Player does not have exactly four cards of rank ${rankToDiscard}. Found: ${cardsOfRank.length}`
+        );
+      }
+
+      return {
+        ...p,
+        hand_cards: currentHand,
+        card_count: currentHand.length,
+      };
+    }
+    return p;
+  });
+
+  const playerWhoDiscarded = updatedPlayers.find((p: any) => p.id === playerId);
+  let newRoomStatus = room.status;
+  let newWinnerPlayerId = room.winner_player_id;
+
+  // Check for win condition after discarding (if hand becomes empty)
+  if (playerWhoDiscarded && playerWhoDiscarded.card_count === 0) {
+    newRoomStatus = "COMPLETED";
+    newWinnerPlayerId = playerId;
+  }
+
+  // Add discard message to game log
+  const playerName =
+    room.players.find((p: any) => p.id === playerId)?.username ||
+    "لاعب غير معروف";
+  const discardMessage = `${playerName} تخلص من أربع بطاقات من رتبة ${rankToDiscard}.`;
+  let updatedGameLog = [...room.game_log, discardMessage];
+
+  // Add win message if game ended
+  if (newRoomStatus === "COMPLETED") {
+    updatedGameLog.push(`${playerName} فاز باللعبة!`);
+  }
+
+  const { data: updatedRoom, error: updateError } = await supabase
+    .from("room")
+    .update({
+      players: updatedPlayers,
+      // Pile cards, last played info, declared rank, current player index remain unchanged
+      // as discarding does not advance the turn or affect the pile.
+      game_log: updatedGameLog, // Update game log
+      status: newRoomStatus, // Update game status
+      winner_player_id: newWinnerPlayerId, // Set winner
+    })
+    .eq("id", roomId)
+    .select()
+    .single();
+
+  if (updateError) {
+    throw new Error(`Failed to discard cards: ${updateError.message}`);
   }
 
   return updatedRoom;
