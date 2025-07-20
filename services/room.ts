@@ -1,7 +1,7 @@
-// services/room.ts
+import supabase from "./supabase"; // تأكد من صحة هذا المسار
 
-import supabase from "./supabase";
-declare function uuidv4(): string;
+// لا حاجة لـ declare function uuidv4(): string; هنا، حيث أن Supabase عادةً ما يتعامل معها
+// أو يمكنك استخدام crypto.randomUUID() في المتصفح/React Native إذا كنت بحاجة لإنشاء UUIDs يدوياً.
 
 const ranks = [
   "ACE",
@@ -19,6 +19,39 @@ const ranks = [
   "KING",
 ];
 const suits = ["HEARTS", "DIAMONDS", "CLUBS", "SPADES"];
+
+interface Card {
+  rank: string;
+  suit: string;
+}
+
+interface Player {
+  id: string;
+  username: string;
+  is_host: boolean;
+  hand_cards: Card[];
+  card_count: number;
+}
+
+interface Room {
+  id: string;
+  room_code: string;
+  players: Player[];
+  status: "LOBBY" | "IN_PROGRESS" | "COMPLETED";
+  host_player_id: string; // إضافة host_player_id
+  turn_order_player_ids: string[]; // إضافة turn_order_player_ids
+  current_player_index: number;
+  pile_cards_count: number;
+  pile_cards: Card[];
+  last_played_by_player_id: string | null;
+  last_played_cards_actual: Card[] | null;
+  declared_rank: string | null;
+  last_player_to_play_id: string | null;
+  consecutive_skips_count: number;
+  game_log: string[];
+  winner_player_id: string | null;
+  created_at: string; // تأكد من وجود هذا الحقل في قاعدة البيانات
+}
 
 function createDeck() {
   const deck = [];
@@ -49,7 +82,8 @@ function getNextPlayerIndex(
 export async function createRoom(
   playerId: string,
   username: string
-): Promise<{ room: any; player: any }> {
+): Promise<{ room: Room; player: Player }> {
+  // تم تعديل نوع الإرجاع
   if (!playerId) {
     throw new Error("Player ID is required to create a room.");
   }
@@ -59,7 +93,7 @@ export async function createRoom(
 
   const newRoomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-  const initialPlayers = [
+  const initialPlayers: Player[] = [
     {
       id: playerId,
       username: username,
@@ -81,30 +115,38 @@ export async function createRoom(
       pile_cards: [],
       last_played_by_player_id: null,
       last_played_cards_actual: null,
-      declared_rank: null, // Track the declared rank for lie calls
+      declared_rank: null,
       players: initialPlayers,
-      last_player_to_play_id: null, // New: Track who last played cards
-      consecutive_skips_count: 0, // New: Track consecutive skips
-      game_log: [], // New: For game notifications
-      winner_player_id: null, // New: To store the winner's ID
+      last_player_to_play_id: null,
+      consecutive_skips_count: 0,
+      game_log: [`${username} أنشأ الغرفة.`], // إضافة رسالة إنشاء الغرفة
+      winner_player_id: null,
     })
     .select()
     .single();
 
   if (roomError) {
+    console.error("Error creating room:", roomError);
     throw new Error(`Failed to create room: ${roomError.message}`);
   }
 
-  const hostPlayerRecord = newRoom.players.find((p: any) => p.id === playerId);
+  // يجب أن نجد اللاعب المضيف من البيانات المرجعة للتأكد من أنه هو نفسه
+  const hostPlayerRecord = newRoom.players.find(
+    (p: Player) => p.id === playerId
+  );
+  if (!hostPlayerRecord) {
+    throw new Error("Host player record not found in the created room.");
+  }
 
-  return { room: newRoom, player: hostPlayerRecord };
+  return { room: newRoom as Room, player: hostPlayerRecord as Player };
 }
 
 export async function joinRoom(
   roomCode: string,
   playerId: string,
   username: string
-): Promise<{ room: any; player: any }> {
+): Promise<{ room: Room; player: Player }> {
+  // تم تعديل نوع الإرجاع
   if (!roomCode) {
     throw new Error("Room Code is required to join a room.");
   }
@@ -117,7 +159,9 @@ export async function joinRoom(
 
   const { data: room, error: fetchError } = await supabase
     .from("room")
-    .select("id, room_code, status, players, turn_order_player_ids, game_log") // Select game_log
+    .select(
+      "id, room_code, status, players, turn_order_player_ids, game_log, host_player_id"
+    ) // إضافة host_player_id
     .eq("room_code", roomCode)
     .single();
 
@@ -138,16 +182,16 @@ export async function joinRoom(
   }
 
   const isPlayerAlreadyInRoom = room.players.some(
-    (p: any) => p.id === playerId
+    (p: Player) => p.id === playerId
   );
   if (isPlayerAlreadyInRoom) {
     const existingPlayerRecord = room.players.find(
-      (p: any) => p.id === playerId
+      (p: Player) => p.id === playerId
     );
-    return { room: room, player: existingPlayerRecord };
+    return { room: room as Room, player: existingPlayerRecord as Player };
   }
 
-  const newPlayer = {
+  const newPlayer: Player = {
     id: playerId,
     username: username,
     is_host: false,
@@ -166,7 +210,7 @@ export async function joinRoom(
     .update({
       players: updatedPlayers,
       turn_order_player_ids: updatedTurnOrderPlayerIds,
-      game_log: updatedGameLog, // Update game log
+      game_log: updatedGameLog,
     })
     .eq("id", room.id)
     .select()
@@ -176,13 +220,14 @@ export async function joinRoom(
     throw new Error(`Failed to join room: ${updateError.message}`);
   }
 
-  return { room: updatedRoom, player: newPlayer };
+  return { room: updatedRoom as Room, player: newPlayer as Player };
 }
 
 export async function startGame(
   roomId: string,
   hostPlayerId: string
-): Promise<any> {
+): Promise<Room> {
+  // تم تعديل نوع الإرجاع
   if (!roomId) {
     throw new Error("Room ID is required to start the game.");
   }
@@ -224,9 +269,10 @@ export async function startGame(
     );
   }
 
-  const shuffledPlayerIds = shuffleArray(room.players.map((p: any) => p.id));
+  const shuffledPlayerIds = shuffleArray(room.players.map((p: Player) => p.id)); // استخدام Player
 
-  const updatedPlayers = room.players.map((player: any, index: number) => {
+  const updatedPlayers = room.players.map((player: Player, index: number) => {
+    // استخدام Player
     const startIndex = index * cardsPerPlayer;
     const endIndex = startIndex + cardsPerPlayer;
     const playerHand = fullDeck.slice(startIndex, endIndex);
@@ -238,8 +284,8 @@ export async function startGame(
   });
 
   // Add game start message to game log
-  const hostPlayer = room.players.find((p: any) => p.id === hostPlayerId);
-  const updatedGameLog = [`${hostPlayer?.username || "المضيف"} بدأ اللعبة.`]; // Reset log on game start
+  const hostPlayer = room.players.find((p: Player) => p.id === hostPlayerId); // استخدام Player
+  const updatedGameLog = [`${hostPlayer?.username || "المضيف"} بدأ اللعبة.`]; // إعادة تعيين السجل عند بدء اللعبة
 
   const { data: updatedRoom, error: updateError } = await supabase
     .from("room")
@@ -251,30 +297,32 @@ export async function startGame(
       pile_cards: [],
       last_played_by_player_id: null,
       last_played_cards_actual: null,
-      declared_rank: null, // Reset declared rank at game start
+      declared_rank: null, // إعادة تعيين الرتبة المعلنة عند بدء اللعبة
       players: updatedPlayers,
-      last_player_to_play_id: null, // Reset on game start
-      consecutive_skips_count: 0, // Reset on game start
-      game_log: updatedGameLog, // Update game log
-      winner_player_id: null, // Reset winner on game start
+      last_player_to_play_id: null, // إعادة تعيين عند بدء اللعبة
+      consecutive_skips_count: 0, // إعادة تعيين عند بدء اللعبة
+      game_log: updatedGameLog, // تحديث سجل اللعبة
+      winner_player_id: null, // إعادة تعيين الفائز عند بدء اللعبة
     })
     .eq("id", roomId)
     .select()
     .single();
 
   if (updateError) {
+    console.error("Error starting game:", updateError);
     throw new Error(`Failed to start game: ${updateError.message}`);
   }
 
-  return updatedRoom;
+  return updatedRoom as Room;
 }
 
 export async function playCards(
   roomId: string,
   playerId: string,
-  cardsToPlay: { rank: string; suit: string }[],
+  cardsToPlay: Card[], // استخدام Card
   declaredRank: string
-): Promise<any> {
+): Promise<Room> {
+  // تم تعديل نوع الإرجاع
   if (!roomId || !playerId || !cardsToPlay || !declaredRank) {
     throw new Error("Missing required parameters for playing cards.");
   }
@@ -309,11 +357,12 @@ export async function playCards(
     throw new Error("It's not your turn to play cards.");
   }
 
-  let updatedPlayers = room.players.map((p: any) => {
+  let updatedPlayers = room.players.map((p: Player) => {
+    // استخدام Player
     if (p.id === playerId) {
       // Create a copy of hand_cards to modify
       let currentHand = [...p.hand_cards];
-      const playedCardsActual = [];
+      const playedCardsActual: Card[] = []; // استخدام Card
 
       for (const cardToPlay of cardsToPlay) {
         const cardIndex = currentHand.findIndex(
@@ -339,7 +388,7 @@ export async function playCards(
     return p;
   });
 
-  const playerWhoPlayed = updatedPlayers.find((p: any) => p.id === playerId);
+  const playerWhoPlayed = updatedPlayers.find((p: Player) => p.id === playerId); // استخدام Player
   let newRoomStatus = room.status;
   let newWinnerPlayerId = room.winner_player_id;
 
@@ -357,13 +406,13 @@ export async function playCards(
 
   // Add play message to game log
   const playerName =
-    room.players.find((p: any) => p.id === playerId)?.username ||
+    room.players.find((p: Player) => p.id === playerId)?.username || // استخدام Player
     "لاعب غير معروف";
   let updatedGameLog = room.game_log;
 
-  // If pile was empty before this play, it's a new "round" sequence, so clear log
+  // إذا كانت الكومة فارغة قبل هذه اللعبة، فهذه "جولة" جديدة، لذلك قم بمسح السجل
   if (room.pile_cards_count === 0) {
-    updatedGameLog = []; // Clear log for new round
+    updatedGameLog = []; // مسح السجل لجولة جديدة
   }
   updatedGameLog.push(
     `${playerName} لعب ${cardsToPlay.length} بطاقة (بطاقات) معلناً أنها ${declaredRank}.`
@@ -395,13 +444,18 @@ export async function playCards(
     .single();
 
   if (updateError) {
+    console.error("Error playing cards:", updateError);
     throw new Error(`Failed to play cards: ${updateError.message}`);
   }
 
-  return updatedRoom;
+  return updatedRoom as Room;
 }
 
-export async function skipTurn(roomId: string, playerId: string): Promise<any> {
+export async function skipTurn(
+  roomId: string,
+  playerId: string
+): Promise<Room> {
+  // تم تعديل نوع الإرجاع
   if (!roomId || !playerId) {
     throw new Error("Missing required parameters for skipping turn.");
   }
@@ -447,7 +501,7 @@ export async function skipTurn(roomId: string, playerId: string): Promise<any> {
 
   // Add skip message to game log
   const playerName =
-    room.players.find((p: any) => p.id === playerId)?.username ||
+    room.players.find((p: Player) => p.id === playerId)?.username || // استخدام Player
     "لاعب غير معروف";
   const updatedGameLog = [...room.game_log, `${playerName} تخطى دوره.`];
 
@@ -465,7 +519,7 @@ export async function skipTurn(roomId: string, playerId: string): Promise<any> {
     newDeclaredRank = null; // Reset declared rank, forcing new declaration
     updatedGameLog.push(
       `عاد الدور إلى ${
-        room.players.find((p) => p.id === room.last_player_to_play_id)
+        room.players.find((p: Player) => p.id === room.last_player_to_play_id) // استخدام Player
           ?.username || "اللاعب السابق"
       }. يجب عليه اللعب وإعلان رتبة جديدة.`
     );
@@ -484,16 +538,18 @@ export async function skipTurn(roomId: string, playerId: string): Promise<any> {
     .single();
 
   if (updateError) {
+    console.error("Error skipping turn:", updateError);
     throw new Error(`Failed to skip turn: ${updateError.message}`);
   }
 
-  return updatedRoom;
+  return updatedRoom as Room;
 }
 
 export async function callLie(
   roomId: string,
   callingPlayerId: string
-): Promise<any> {
+): Promise<Room> {
+  // تم تعديل نوع الإرجاع
   if (!roomId || !callingPlayerId) {
     throw new Error("Missing required parameters for calling a lie.");
   }
@@ -530,7 +586,7 @@ export async function callLie(
 
   // Determine if the lie was successful
   const actualRankOfPlayedCards = room.last_played_cards_actual.every(
-    (card: any) => card.rank === room.declared_rank
+    (card: Card) => card.rank === room.declared_rank // استخدام Card
   );
   const playerWhoPlayedId = room.last_played_by_player_id;
   const pileCards = room.pile_cards; // Get all cards from the pile
@@ -542,15 +598,16 @@ export async function callLie(
   let newWinnerPlayerId = room.winner_player_id;
 
   const callingPlayerName =
-    room.players.find((p: any) => p.id === callingPlayerId)?.username ||
+    room.players.find((p: Player) => p.id === callingPlayerId)?.username || // استخدام Player
     "لاعب غير معروف";
   const playedPlayerName =
-    room.players.find((p: any) => p.id === playerWhoPlayedId)?.username ||
+    room.players.find((p: Player) => p.id === playerWhoPlayedId)?.username || // استخدام Player
     "لاعب غير معروف";
 
   if (!actualRankOfPlayedCards) {
     // The player who played *lied* (caller was correct)
-    updatedPlayers = updatedPlayers.map((p: any) => {
+    updatedPlayers = updatedPlayers.map((p: Player) => {
+      // استخدام Player
       if (p.id === playerWhoPlayedId) {
         // Lying player takes the pile
         const newHand = [...p.hand_cards, ...pileCards];
@@ -567,7 +624,8 @@ export async function callLie(
     lieCallMessage = `${callingPlayerName} اتهم ${playedPlayerName} بالكذب! ${playedPlayerName} كان يكذب وأخذ جميع البطاقات. الدور الآن لـ ${callingPlayerName}.`;
   } else {
     // The player who played *told the truth* (caller was wrong)
-    updatedPlayers = updatedPlayers.map((p: any) => {
+    updatedPlayers = updatedPlayers.map((p: Player) => {
+      // استخدام Player
       if (p.id === callingPlayerId) {
         // Caller takes the pile
         const newHand = [...p.hand_cards, ...pileCards];
@@ -585,7 +643,8 @@ export async function callLie(
   }
 
   // Check for win condition after taking cards (unlikely, but possible if pile was small)
-  updatedPlayers.forEach((p: any) => {
+  updatedPlayers.forEach((p: Player) => {
+    // استخدام Player
     if (p.card_count === 0) {
       newRoomStatus = "COMPLETED";
       newWinnerPlayerId = p.id;
@@ -615,17 +674,19 @@ export async function callLie(
     .single();
 
   if (updateError) {
+    console.error("Error calling lie:", updateError);
     throw new Error(`Failed to call lie: ${updateError.message}`);
   }
 
-  return updatedRoom;
+  return updatedRoom as Room;
 }
 
 export async function discardQuads(
   roomId: string,
   playerId: string,
   rankToDiscard: string
-): Promise<any> {
+): Promise<Room> {
+  // تم تعديل نوع الإرجاع
   if (!roomId || !playerId || !rankToDiscard) {
     throw new Error("Missing required parameters for discarding cards.");
   }
@@ -656,7 +717,8 @@ export async function discardQuads(
     throw new Error("It's not your turn to discard cards.");
   }
 
-  let updatedPlayers = room.players.map((p: any) => {
+  let updatedPlayers = room.players.map((p: Player) => {
+    // استخدام Player
     if (p.id === playerId) {
       let currentHand = [...p.hand_cards];
       const cardsToRemove: Card[] = [];
@@ -704,7 +766,9 @@ export async function discardQuads(
     return p;
   });
 
-  const playerWhoDiscarded = updatedPlayers.find((p: any) => p.id === playerId);
+  const playerWhoDiscarded = updatedPlayers.find(
+    (p: Player) => p.id === playerId
+  ); // استخدام Player
   let newRoomStatus = room.status;
   let newWinnerPlayerId = room.winner_player_id;
 
@@ -716,7 +780,7 @@ export async function discardQuads(
 
   // Add discard message to game log
   const playerName =
-    room.players.find((p: any) => p.id === playerId)?.username ||
+    room.players.find((p: Player) => p.id === playerId)?.username || // استخدام Player
     "لاعب غير معروف";
   const discardMessage = `${playerName} تخلص من أربع بطاقات من رتبة ${rankToDiscard}.`;
   let updatedGameLog = [...room.game_log, discardMessage];
@@ -741,8 +805,81 @@ export async function discardQuads(
     .single();
 
   if (updateError) {
+    console.error("Error discarding quads:", updateError);
     throw new Error(`Failed to discard cards: ${updateError.message}`);
   }
 
-  return updatedRoom;
+  return updatedRoom as Room;
+}
+
+// الدالة المحدثة لمغادرة الغرفة
+export async function leaveRoom(
+  roomId: string,
+  playerId: string
+): Promise<void> {
+  // جلب حالة الغرفة الحالية
+  const { data: room, error: fetchError } = await supabase
+    .from("room")
+    .select("players, host_player_id, turn_order_player_ids, game_log") // جلب host_player_id و turn_order_player_ids
+    .eq("id", roomId)
+    .single();
+
+  if (fetchError || !room) {
+    console.error("Error fetching room to leave:", fetchError);
+    throw new Error("الغرفة غير موجودة أو حدث خطأ أثناء المغادرة.");
+  }
+
+  const leavingPlayer = room.players.find((p: Player) => p.id === playerId);
+  if (!leavingPlayer) {
+    throw new Error("اللاعب غير موجود في هذه الغرفة.");
+  }
+
+  // تحديث قائمة اللاعبين بإزالة اللاعب الذي غادر
+  let updatedPlayers = room.players.filter((p: Player) => p.id !== playerId);
+  let updatedHostPlayerId = room.host_player_id;
+  let updatedTurnOrderPlayerIds = room.turn_order_player_ids.filter(
+    (id: string) => id !== playerId
+  );
+  let updatedGameLog = [
+    ...room.game_log,
+    `${leavingPlayer.username} غادر الغرفة.`,
+  ]; // إضافة رسالة مغادرة
+
+  // إذا كان اللاعب المغادر هو المضيف وهناك لاعبون آخرون، قم بتعيين مضيف جديد
+  if (leavingPlayer.is_host && updatedPlayers.length > 0) {
+    updatedPlayers[0] = { ...updatedPlayers[0], is_host: true }; // تعيين أول لاعب متبقٍ كمضيف جديد
+    updatedHostPlayerId = updatedPlayers[0].id; // تحديث host_player_id في الغرفة
+    updatedGameLog.push(`تم تعيين ${updatedPlayers[0].username} كمضيف جديد.`);
+  }
+
+  if (updatedPlayers.length === 0) {
+    // إذا لم يتبق أي لاعبين، احذف الغرفة
+    const { error: deleteError } = await supabase
+      .from("room")
+      .delete()
+      .eq("id", roomId);
+
+    if (deleteError) {
+      console.error("Error deleting empty room:", deleteError);
+      throw new Error(deleteError.message);
+    }
+    console.log(`تم حذف الغرفة ${roomId} لعدم وجود لاعبين متبقين.`);
+  } else {
+    // وإلا، قم بتحديث الغرفة باللاعبين المتبقين والمضيف الجديد وترتيب الأدوار وسجل اللعبة
+    const { error: updateError } = await supabase
+      .from("room")
+      .update({
+        players: updatedPlayers,
+        host_player_id: updatedHostPlayerId,
+        turn_order_player_ids: updatedTurnOrderPlayerIds,
+        game_log: updatedGameLog,
+      })
+      .eq("id", roomId);
+
+    if (updateError) {
+      console.error("Error updating room after player left:", updateError);
+      throw new Error(updateError.message);
+    }
+    console.log(`غادر اللاعب ${playerId} الغرفة ${roomId}. تم تحديث الغرفة.`);
+  }
 }

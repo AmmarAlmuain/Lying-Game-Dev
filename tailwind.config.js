@@ -9,16 +9,18 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        "primary-dark": "#52B69A",
-        "primary-light": "#76C893",
-        "secondary-dark": "#FFA92C",
-        "secondary-light": "#FFC570",
-        "neutral-dark": "#0C0C20",
-        "neutral-light": "#F4F5F7",
-        mute: "#D1D5DB33",
+        "purple-pri": "#C94DFF",
+        "green-sec": "#14D768",
+        "orange-thi": "#FFAD44",
       },
       fontFamily: {
-        HelveticaNeue: ["HelveticaNeue"],
+        // Marhey weights
+        "marhey-light": ["Marhey_300Light"],
+        "marhey-regular": ["Marhey_400Regular"],
+        "marhey-medium": ["Marhey_500Medium"],
+        "marhey-semibold": ["Marhey_600SemiBold"],
+        "marhey-bold": ["Marhey_700Bold"],
+        marhey: ["Marhey_400Regular"],
       },
     },
   },
