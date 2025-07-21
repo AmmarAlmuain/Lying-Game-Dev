@@ -34,6 +34,7 @@ interface Player {
 }
 
 interface Room {
+  last_played_cards: never[];
   id: string;
   room_code: string;
   players: Player[];
@@ -91,7 +92,7 @@ export async function createRoom(
     throw new Error("Username is required to create a room.");
   }
 
-  const newRoomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const newRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
 
   const initialPlayers: Player[] = [
     {
@@ -863,7 +864,6 @@ export async function leaveRoom(
       console.error("Error deleting empty room:", deleteError);
       throw new Error(deleteError.message);
     }
-    console.log(`تم حذف الغرفة ${roomId} لعدم وجود لاعبين متبقين.`);
   } else {
     // وإلا، قم بتحديث الغرفة باللاعبين المتبقين والمضيف الجديد وترتيب الأدوار وسجل اللعبة
     const { error: updateError } = await supabase
@@ -880,6 +880,5 @@ export async function leaveRoom(
       console.error("Error updating room after player left:", updateError);
       throw new Error(updateError.message);
     }
-    console.log(`غادر اللاعب ${playerId} الغرفة ${roomId}. تم تحديث الغرفة.`);
   }
 }

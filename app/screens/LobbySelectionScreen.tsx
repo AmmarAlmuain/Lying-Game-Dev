@@ -53,8 +53,6 @@ export default function LobbySelectionScreen({
   };
 
   const onJoinPress = () => {
-    console.log("LobbySelectionScreen: Join button pressed.");
-    console.log("LobbySelectionScreen: roomCodeInput value:", roomCodeInput);
     if (!roomCodeInput.trim()) {
       Alert.alert("خطأ", "الرجاء إدخال رمز الغرفة.");
       return;
@@ -146,7 +144,7 @@ export default function LobbySelectionScreen({
         >
           <Pressable
             id="rules-button"
-            className="w-48 h-[50px]"
+            className="w-[60px] h-[64px]"
             onPress={() =>
               Alert.alert("قوانين اللعبة", "هنا ستكون قوانين اللعبة.")
             }

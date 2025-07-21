@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "expo-project-template",
+    "name": "لعبة الكذب",
     "slug": "expo-project-template",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -39,7 +39,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "router": {},

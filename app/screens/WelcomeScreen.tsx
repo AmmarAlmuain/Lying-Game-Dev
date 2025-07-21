@@ -162,7 +162,7 @@ export default function WelcomeScreen({
         >
           <Pressable
             id="rules-button"
-            className="w-48 h-[50px]"
+            className="w-[60px] h-[64px]"
             onPress={() =>
               Alert.alert("قوانين اللعبة", "هنا ستكون قوانين اللعبة.")
             }

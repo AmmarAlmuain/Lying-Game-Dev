@@ -36,7 +36,7 @@ export default function GameScreen({
   declaredRankInput: string;
   setDeclaredRankInput: React.Dispatch<React.SetStateAction<string>>;
   showFullLogModal: boolean;
-  setShowFullLogModal: React.SetStateAction<boolean>;
+  setShowFullLogModal: React.Dispatch<React.SetStateAction<boolean>>; // Corrected type from previous turn
   handleCardPress: (card: Card) => void;
   handlePlayCards: () => void;
   handleSkipTurn: () => void;
@@ -71,10 +71,15 @@ export default function GameScreen({
   );
 
   const isMyTurn =
-    playersInRoom[roomInfo.current_player_index]?.id === localPlayer.id;
-  const isHost = localPlayer.is_host;
+    roomInfo.turn_order_player_ids[roomInfo.current_player_index] ===
+    localPlayer.id;
+  const isHost = roomInfo?.host_player_id === localPlayer?.id;
   const gameStarted = roomInfo.status === "IN_PROGRESS";
-  console.log("player is the host:", isHost);
+
+  // NEW LOGIC: Determine if four cards of the same rank are selected
+  const canDiscardQuads =
+    selectedCards.length === 4 &&
+    selectedCards.every((card) => card.rank === selectedCards[0]?.rank);
 
   const animatePressIn = (scale: Animated.Value) => {
     Animated.spring(scale, {
@@ -167,6 +172,7 @@ export default function GameScreen({
   const otherPlayers = playersInRoom.filter(
     (player) => player.id !== localPlayer.id
   );
+  console.log(selectedCards);
   return (
     <View
       id="game-screen"
@@ -222,12 +228,17 @@ export default function GameScreen({
             className="flex flex-row items-center justify-end h-20 pr-5 gap-x-5 bg-black/30"
           >
             {roomInfo.game_log && roomInfo.game_log.length > 0 ? (
-              <View className="flex items-end">
+              <View className="flex flex-col-reverse items-end justify-end">
                 <Text className="text-white font-marhey-bold">
-                  {roomInfo.game_log[roomInfo.game_log.length - 2] || ""}
+                  {roomInfo.game_log[roomInfo.game_log.length - 1].length > 40
+                    ? `${roomInfo.game_log[roomInfo.game_log.length - 1].slice(
+                        0,
+                        40
+                      )}...`
+                    : roomInfo.game_log[roomInfo.game_log.length - 1]}
                 </Text>
                 <Text className="text-white font-marhey-bold">
-                  {roomInfo.game_log[roomInfo.game_log.length - 1] || ""}
+                  {roomInfo.game_log[roomInfo.game_log.length - 2] || ""}
                 </Text>
               </View>
             ) : (
@@ -254,7 +265,7 @@ export default function GameScreen({
                 id="player-one"
                 className={`absolute flex justify-center items-center h-7 px-4 bottom-0 rounded-[20px] border-2 border-white self-center ${
                   playerOnDevice.id ===
-                  playersInRoom[roomInfo.current_player_index]?.id
+                  roomInfo.turn_order_player_ids[roomInfo.current_player_index]
                     ? "bg-yellow-400"
                     : "bg-[#89299C]"
                 }`}
@@ -271,7 +282,7 @@ export default function GameScreen({
                 id="player-two"
                 className={`absolute flex justify-center items-center h-7 px-4 top-0 rounded-[20px] border-2 border-white self-center ${
                   otherPlayers[0].id ===
-                  playersInRoom[roomInfo.current_player_index]?.id
+                  roomInfo.turn_order_player_ids[roomInfo.current_player_index]
                     ? "bg-yellow-400"
                     : "bg-[#89299C]"
                 }`}
@@ -365,25 +376,23 @@ export default function GameScreen({
             ) : gameStarted && roomInfo.pile_cards_count > 0 ? (
               <View
                 id="card-pile-display"
-                className="absolute items-center justify-center bg-green-300"
+                className="absolute items-center justify-center"
               >
                 {roomInfo.last_played_cards_actual &&
                 roomInfo.last_played_cards_actual.length > 0 ? (
                   <View className="flex-row">
                     <Image
                       source={require("@/assets/images/card-pile.png")}
-                      className="object-contain w-16 h-24 bg-red-300 mx-0.5"
+                      className="object-contain w-[43px] h-[65px] mx-0.5"
+                      style={{ transform: [{ rotate: "90deg" }] }}
                     />
                   </View>
-                ) : (
-                  <Image
-                    source={require("@/assets/images/card-pile.png")}
-                    className="object-contain w-24 h-24"
-                  />
-                )}
-                <Text className="mt-1 text-sm text-gray-800">
-                  البطاقات في الكومة: {roomInfo.pile_cards_count}
-                </Text>
+                ) : null}
+                <View className="absolute flex items-center justify-center w-6 h-6 border-2 border-white rounded-full bg-purple-pri">
+                  <Text className="leading-none text-white font-marhey-re">
+                    {roomInfo.pile_cards_count}
+                  </Text>
+                </View>
               </View>
             ) : gameStarted && roomInfo.pile_cards_count === 0 ? (
               <View
@@ -396,10 +405,11 @@ export default function GameScreen({
               </View>
             ) : null}
           </View>
-
           <View
             id="game-actions-and-details"
-            className="flex items-center justify-center w-full mb-12"
+            className={`flex items-center justify-center w-full mb-12 ${
+              isMyTurn && gameStarted ? "opacity-100" : "opacity-20"
+            }`}
           >
             <View className="flex mb-2.5 flex-row items-center justify-between w-[324px]">
               <Text className="leading-none text-center text-white font-marhey-regular">
@@ -410,27 +420,37 @@ export default function GameScreen({
               </Text>
             </View>
             <View className="flex items-center justify-center w-full mb-5">
-              <TextInput
-                id="rank-input"
-                className="w-[324px] h-[70px] text-center border-4 text-2xl font-marhey-regular border-white rounded-[15px] text-[#F0CCFF] bg-[#C94CFF]/30"
-                placeholder="الرتبة المعلنة (مثال: K أو 7)"
-                placeholderTextColor="#F0CCFF"
-                value={declaredRankInput}
-                onChangeText={setDeclaredRankInput}
-                editable={!loading}
-              />
+              {roomInfo.declared_rank === null && isMyTurn ? (
+                <TextInput
+                  id="rank-input"
+                  className="w-[324px] h-[70px] text-center border-4 text-2xl font-marhey-regular border-white rounded-[15px] text-[#F0CCFF] bg-[#C94CFF]/30"
+                  placeholder="الرتبة المعلنة (مثال: K أو 7)"
+                  placeholderTextColor="#F0CCFF"
+                  value={declaredRankInput}
+                  onChangeText={setDeclaredRankInput}
+                  editable={!loading || !isMyTurn || !gameStarted}
+                />
+              ) : null}
             </View>
 
             <View className="flex-row flex-wrap items-end justify-center">
               <Pressable
                 id="call-lie-button"
                 className={`w-[170px] h-[60px] ${
-                  !gameStarted || loading ? "opacity-50" : ""
+                  !gameStarted || loading || roomInfo.declared_rank === null
+                    ? "opacity-50"
+                    : ""
                 }`}
                 onPress={handleCallLie}
                 onPressIn={() => animatePressIn(lieButtonScale)}
                 onPressOut={() => animatePressOut(lieButtonScale)}
-                disabled={!gameStarted || loading}
+                disabled={
+                  // Corrected disabled condition: should be !loading instead of !loading || !isMyTurn
+                  loading ||
+                  !isMyTurn ||
+                  !gameStarted ||
+                  roomInfo.declared_rank === null
+                }
                 style={{ transform: [{ scale: 0.85 }] }}
               >
                 <Animated.Image
@@ -445,7 +465,8 @@ export default function GameScreen({
                   !gameStarted ||
                   loading ||
                   selectedCards.length === 0 ||
-                  !declaredRankInput.trim()
+                  (declaredRankInput.trim() === "" &&
+                    roomInfo.declared_rank === null)
                     ? "opacity-50"
                     : ""
                 }`}
@@ -454,9 +475,11 @@ export default function GameScreen({
                 onPressOut={() => animatePressOut(playButtonScale)}
                 disabled={
                   !gameStarted ||
+                  !isMyTurn ||
                   loading ||
                   selectedCards.length === 0 ||
-                  !declaredRankInput.trim()
+                  (declaredRankInput.trim() === "" &&
+                    roomInfo.declared_rank === null)
                 }
                 style={{ transform: [{ scale: 0.85 }] }}
               >
@@ -469,12 +492,20 @@ export default function GameScreen({
               <Pressable
                 id="discard-quads-button"
                 className={`w-[170px] h-[60px] ${
-                  !gameStarted || loading ? "opacity-50" : ""
+                  // Updated opacity condition
+                  !gameStarted || loading || !isMyTurn || !canDiscardQuads
+                    ? "opacity-50"
+                    : ""
                 }`}
-                onPress={() => handleDiscardQuads(declaredRankInput.trim())}
+                onPress={() => {
+                  handleDiscardQuads(selectedCards[0]?.rank);
+                }}
                 onPressIn={() => animatePressIn(discardButtonScale)}
                 onPressOut={() => animatePressOut(discardButtonScale)}
-                disabled={!gameStarted || loading}
+                disabled={
+                  // Updated disabled condition
+                  !gameStarted || loading || !isMyTurn || !canDiscardQuads
+                }
                 style={{ transform: [{ scale: 0.85 }] }}
               >
                 <Animated.Image
@@ -486,12 +517,19 @@ export default function GameScreen({
               <Pressable
                 id="skip-turn-button"
                 className={`w-[170px] h-[60px] ${
-                  !gameStarted || loading ? "opacity-50" : ""
+                  !gameStarted || loading || roomInfo.declared_rank === null
+                    ? "opacity-50"
+                    : ""
                 }`}
                 onPress={handleSkipTurn}
                 onPressIn={() => animatePressIn(skipButtonScale)}
                 onPressOut={() => animatePressOut(skipButtonScale)}
-                disabled={!gameStarted || loading}
+                disabled={
+                  !gameStarted ||
+                  loading ||
+                  !isMyTurn ||
+                  roomInfo.declared_rank === null
+                }
                 style={{ transform: [{ scale: 0.85 }] }}
               >
                 <Animated.Image

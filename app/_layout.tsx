@@ -16,8 +16,6 @@ import * as SplashScreen from "expo-splash-screen";
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  console.log("RootLayout: Component re-rendered."); // Log every render
-
   const [fontsLoaded, fontError] = useFonts({
     Marhey_300Light,
     Marhey_400Regular,
@@ -26,27 +24,17 @@ export default function RootLayout() {
     Marhey_700Bold,
   });
 
-  console.log("RootLayout: fontsLoaded =", fontsLoaded);
-  console.log("RootLayout: fontError =", fontError);
-
   useEffect(() => {
-    console.log("RootLayout: useEffect triggered.");
     if (fontsLoaded || fontError) {
-      console.log("RootLayout: Attempting to hide splash screen.");
       SplashScreen.hideAsync();
     } else {
-      console.log(
-        "RootLayout: Fonts not loaded/error, not hiding splash screen yet."
-      );
     }
   }, [fontsLoaded, fontError]); // Dependency array: run when these change
 
   if (!fontsLoaded && !fontError) {
-    console.log("RootLayout: Returning null (splash screen visible).");
     return null; // Keep splash screen visible while loading
   }
 
-  console.log("RootLayout: Fonts loaded, rendering Stack navigator.");
   return (
     <Stack>
       <Stack.Screen
