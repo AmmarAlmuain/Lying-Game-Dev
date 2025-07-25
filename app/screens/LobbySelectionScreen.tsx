@@ -8,6 +8,7 @@ import {
   Pressable,
   Animated,
   Alert,
+  Linking,
 } from "react-native";
 
 export default function LobbySelectionScreen({
@@ -145,9 +146,10 @@ export default function LobbySelectionScreen({
           <Pressable
             id="rules-button"
             className="w-[60px] h-[64px]"
-            onPress={() =>
-              Alert.alert("قوانين اللعبة", "هنا ستكون قوانين اللعبة.")
-            }
+            onPress={async () => {
+              // Alert.alert("قوانين اللعبة", "هنا ستكون قوانين اللعبة.");
+              await Linking.openURL("../../assets/rules.pdf");
+            }}
             onPressIn={() => animatePressIn(rulesButtonScale)}
             onPressOut={() => animatePressOut(rulesButtonScale)}
             disabled={loading}
@@ -162,7 +164,7 @@ export default function LobbySelectionScreen({
             id="game-version"
             className="text-xl text-white font-marhey-bold"
           >
-            نسخه 0.3
+            نسخة 0.4
           </Text>
         </View>
       </ImageBackground>

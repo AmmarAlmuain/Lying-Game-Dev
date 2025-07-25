@@ -62,9 +62,9 @@ export async function initPlayerSession(): Promise<{
   return { id: playerId, name: playerName };
 }
 
-export async function changePlayerUsername(newUsername: string): Promise<void> {
-  if (!newUsername) {
+export async function changePlayerName(newName: string): Promise<void> {
+  if (!newName) {
     throw new Error("اسم المستخدم لا يمكن أن يكون فارغاً.");
   }
-  await AsyncStorage.setItem("player_name", newUsername);
+  await AsyncStorage.setItem("player_name", newName);
 }

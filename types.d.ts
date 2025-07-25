@@ -5,7 +5,7 @@ interface Card {
 
 interface Player {
   id: string;
-  username: string;
+  name: string;
   is_host?: boolean;
   hand_cards?: Card[];
   card_count?: number;

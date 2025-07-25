@@ -173,6 +173,20 @@ export async function joinRoom(
     throw new Error(`Failed to fetch room: ${fetchError.message}`);
   }
 
+  const isPlayerAlreadyInRoom = room.players.some(
+    (p: Player) => p.id === playerId
+  );
+
+  // If player is already in the room, allow them to 'rejoin' regardless of game status
+  if (isPlayerAlreadyInRoom) {
+    const existingPlayerRecord = room.players.find(
+      (p: Player) => p.id === playerId
+    );
+    // No update needed to the database if the player is already there and just re-syncing
+    return { room: room as Room, player: existingPlayerRecord as Player };
+  }
+
+  // For new players trying to join, enforce LOBBY status and MAX_PLAYERS limit
   if (room.status !== "LOBBY") {
     throw new Error(`Cannot join room. Room status is '${room.status}'.`);
   }
@@ -180,16 +194,6 @@ export async function joinRoom(
   const MAX_PLAYERS = 4;
   if (room.players.length >= MAX_PLAYERS) {
     throw new Error("Room is full. Cannot join.");
-  }
-
-  const isPlayerAlreadyInRoom = room.players.some(
-    (p: Player) => p.id === playerId
-  );
-  if (isPlayerAlreadyInRoom) {
-    const existingPlayerRecord = room.players.find(
-      (p: Player) => p.id === playerId
-    );
-    return { room: room as Room, player: existingPlayerRecord as Player };
   }
 
   const newPlayer: Player = {

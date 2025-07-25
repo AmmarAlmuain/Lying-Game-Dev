@@ -36,7 +36,7 @@ export default function GameScreen({
   declaredRankInput: string;
   setDeclaredRankInput: React.Dispatch<React.SetStateAction<string>>;
   showFullLogModal: boolean;
-  setShowFullLogModal: React.Dispatch<React.SetStateAction<boolean>>; // Corrected type from previous turn
+  setShowFullLogModal: React.Dispatch<React.SetStateAction<boolean>>;
   handleCardPress: (card: Card) => void;
   handlePlayCards: () => void;
   handleSkipTurn: () => void;
@@ -76,7 +76,6 @@ export default function GameScreen({
   const isHost = roomInfo?.host_player_id === localPlayer?.id;
   const gameStarted = roomInfo.status === "IN_PROGRESS";
 
-  // NEW LOGIC: Determine if four cards of the same rank are selected
   const canDiscardQuads =
     selectedCards.length === 4 &&
     selectedCards.every((card) => card.rank === selectedCards[0]?.rank);
@@ -105,7 +104,6 @@ export default function GameScreen({
   const leaveButtonScale = useRef(new Animated.Value(1)).current;
   const startGameButtonScale = useRef(new Animated.Value(1)).current;
 
-  // Optimized Card Image Mapping
   const cardImageMap: { [key: string]: any } = {
     "ace-h": require("../../assets/images/cards/ace-h.png"),
     "ace-d": require("../../assets/images/cards/ace-d.png"),
@@ -168,11 +166,10 @@ export default function GameScreen({
     return cardImageMap[key] || require("../../assets/images/card-back.png");
   };
 
-  // Filter out the local player to get other players
   const otherPlayers = playersInRoom.filter(
     (player) => player.id !== localPlayer.id
   );
-  console.log(selectedCards);
+
   return (
     <View
       id="game-screen"
@@ -188,25 +185,6 @@ export default function GameScreen({
             id="room-action"
             className="flex-row items-center justify-between"
           >
-            <Pressable
-              id="refresh-room-button"
-              className="w-[200px] h-12"
-              onPress={() =>
-                Alert.alert(
-                  "تحديث",
-                  "سيتم تحديث معلومات اللعبة (سيتم تحديث البيانات عبر الاشتراك التلقائي)."
-                )
-              }
-              onPressIn={() => animatePressIn(refreshButtonScale)}
-              onPressOut={() => animatePressOut(refreshButtonScale)}
-              disabled={loading}
-            >
-              <Animated.Image
-                source={require("@/assets/images/refresh-room-button.png")}
-                className="object-contain w-full h-full"
-                style={{ transform: [{ scale: refreshButtonScale }] }}
-              />
-            </Pressable>
             <Pressable
               id="leave-room-button"
               className="w-[160px] h-12"
@@ -229,16 +207,13 @@ export default function GameScreen({
           >
             {roomInfo.game_log && roomInfo.game_log.length > 0 ? (
               <View className="flex flex-col-reverse items-end justify-end">
-                <Text className="text-white font-marhey-bold">
+                <Text className="text-right text-white w-[280px] font-marhey-bold">
                   {roomInfo.game_log[roomInfo.game_log.length - 1].length > 40
                     ? `${roomInfo.game_log[roomInfo.game_log.length - 1].slice(
                         0,
-                        40
+                        120
                       )}...`
                     : roomInfo.game_log[roomInfo.game_log.length - 1]}
-                </Text>
-                <Text className="text-white font-marhey-bold">
-                  {roomInfo.game_log[roomInfo.game_log.length - 2] || ""}
                 </Text>
               </View>
             ) : (
@@ -271,7 +246,7 @@ export default function GameScreen({
                 }`}
               >
                 <Text className="leading-none text-white font-marhey-regular">
-                  {playerOnDevice.username} ({playerOnDevice.card_count})
+                  {playerOnDevice.name} ({playerOnDevice.card_count})
                 </Text>
               </View>
             )}
@@ -288,7 +263,7 @@ export default function GameScreen({
                 }`}
               >
                 <Text className="leading-none text-white font-marhey-regular">
-                  {otherPlayers[0].username} ({otherPlayers[0].card_count})
+                  {otherPlayers[0].name} ({otherPlayers[0].card_count})
                 </Text>
               </View>
             )}
@@ -306,7 +281,7 @@ export default function GameScreen({
                 style={{ transform: [{ rotate: "90deg" }] }}
               >
                 <Text className="leading-none text-white font-marhey-regular">
-                  {otherPlayers[1].username} ({otherPlayers[1].card_count})
+                  {otherPlayers[1].name} ({otherPlayers[1].card_count})
                 </Text>
               </View>
             )}
@@ -324,7 +299,7 @@ export default function GameScreen({
                 style={{ transform: [{ rotate: "-90deg" }] }}
               >
                 <Text className="leading-none text-white font-marhey-regular">
-                  {otherPlayers[2].username} ({otherPlayers[2].card_count})
+                  {otherPlayers[2].name} ({otherPlayers[2].card_count})
                 </Text>
               </View>
             )}

@@ -9,7 +9,7 @@ import {
   Pressable,
   Animated,
 } from "react-native";
-import { changePlayerUsername } from "../../services/player";
+import { changePlayerName } from "../../services/player";
 
 interface Card {
   rank: string;
@@ -51,7 +51,7 @@ export default function WelcomeScreen({
     }
     setLoading(true);
     try {
-      await changePlayerUsername(usernameInput.trim());
+      await changePlayerName(usernameInput.trim());
       setLocalPlayer((prev) =>
         prev ? { ...prev, username: usernameInput.trim() } : null
       );
@@ -180,7 +180,7 @@ export default function WelcomeScreen({
             id="game-version"
             className="text-xl text-white font-marhey-bold"
           >
-            نسخه 0.3
+            نسخة 0.4
           </Text>
         </View>
       </ImageBackground>

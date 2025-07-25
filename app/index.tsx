@@ -1,7 +1,8 @@
 import "react-native-url-polyfill/auto";
 import "react-native-get-random-values";
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { View, Text, ActivityIndicator, Alert, Dimensions } from "react-native";
+import { View, Text, ActivityIndicator, Alert } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // Import AsyncStorage
 import { initPlayerSession } from "../services/player";
 import {
   createRoom,
@@ -17,18 +18,12 @@ import supabase from "../services/supabase";
 import WelcomeScreen from "./screens/WelcomeScreen";
 import LobbySelectionScreen from "./screens/LobbySelectionScreen";
 import GameScreen from "./screens/GameScreen";
-import { useAudioPlayer } from "expo-audio";
-
-// const audioSource = require("@/assets/sounds/click-button-sound.mp3");
-
-// const player = useAudioPlayer(audioSource);
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [localPlayer, setLocalPlayer] = useState<Player | null>(null);
   const [roomInfo, setRoomInfo] = useState<Room | null>(null);
-  const [usernameInput, setUsernameInput] = useState("");
+  const [nameInput, setNameInput] = useState("");
   const [roomCodeInput, setRoomCodeInput] = useState("");
   const [currentPage, setCurrentPage] = useState<CurrentPage>("welcome");
   const [selectedCards, setSelectedCards] = useState<Card[]>([]);
@@ -38,6 +33,32 @@ export default function App() {
   const playerSubscription = useRef<any>(null);
   const initializedPlayerSession = useRef(false);
 
+  const saveRoomInfo = async (roomCode: string) => {
+    try {
+      await AsyncStorage.setItem("lastRoomCode", roomCode);
+    } catch (e) {
+      console.error("Failed to save room info to local storage", e);
+    }
+  };
+
+  const loadRoomInfo = async () => {
+    try {
+      const lastRoomCode = await AsyncStorage.getItem("lastRoomCode");
+      return { lastRoomCode };
+    } catch (e) {
+      console.error("Failed to load room info from local storage", e);
+      return { lastRoomId: null, lastRoomCode: null, lastPlayerId: null };
+    }
+  };
+
+  const removeRoomInfo = async () => {
+    try {
+      await AsyncStorage.removeItem("lastRoomCode");
+    } catch (e) {
+      console.error("Failed to remove room info from local storage", e);
+    }
+  };
+
   useEffect(() => {
     async function initialize() {
       if (initializedPlayerSession.current) {
@@ -45,18 +66,44 @@ export default function App() {
       }
       initializedPlayerSession.current = true;
       setLoading(true);
-      setError(null);
       try {
         const { id, name } = await initPlayerSession();
         const player: Player = {
           id,
-          username: name,
+          name,
         };
         setLocalPlayer(player);
-        setUsernameInput(name);
+        setNameInput(name);
+        const { lastRoomCode } = await loadRoomInfo();
+        if (lastRoomCode) {
+          try {
+            const { data: room, error: fetchError } = await supabase
+              .from("room")
+              .select("*")
+              .eq("room_code", lastRoomCode)
+              .single();
+            if (fetchError) {
+              if (fetchError.code === "PGRST116") {
+                throw new Error(`Room with code '${lastRoomCode}' not found.`);
+              }
+              throw new Error(`Failed to fetch room: ${fetchError.message}`);
+            }
+            setRoomInfo(room);
+            setCurrentPage("game");
+            Alert.alert(
+              "تم إعادة الاتصال",
+              `تمت إعادة الاتصال بالغرفة ${lastRoomCode}`
+            );
+          } catch (err: any) {
+            Alert.alert(
+              "فشل إعادة الاتصال",
+              "فشل في إعادة الانضمام إلى الغرفة السابقة."
+            );
+            removeRoomInfo();
+          }
+        }
       } catch (err: any) {
-        console.error("App: Error initializing player session:", err);
-        setError(err.message || "فشل في تهيئة جلسة اللاعب.");
+        Alert.alert("خطأ", "فشل في تهيئة جلسة اللاعب.");
       } finally {
         setLoading(false);
       }
@@ -69,36 +116,20 @@ export default function App() {
         "postgres_changes",
         { event: "*", schema: "public", table: "room" },
         (payload) => {
-          const newRoom = payload.new as Room;
-          const safeNewRoom: Room = {
-            ...newRoom,
-            players: newRoom.players || [],
-            game_log: newRoom.game_log || [],
-            last_played_cards_actual: newRoom.last_played_cards_actual || [],
-          };
-
-          if (roomInfo && safeNewRoom.id === roomInfo.id) {
-            setRoomInfo(safeNewRoom);
-            if (
-              safeNewRoom.status === "IN_PROGRESS" &&
-              currentPage !== "game"
-            ) {
+          const room = payload.new as Room;
+          if (roomInfo && room.id === roomInfo.id) {
+            setRoomInfo(room);
+            if (room.status === "IN_PROGRESS" && currentPage !== "game") {
               setCurrentPage("game");
             }
           } else if (
             !roomInfo &&
-            safeNewRoom.players.some((p) => p.id === localPlayer?.id)
+            room.players.some((p) => p.id === localPlayer?.id)
           ) {
-            setRoomInfo(safeNewRoom);
-            if (
-              safeNewRoom.status === "IN_PROGRESS" &&
-              currentPage !== "game"
-            ) {
+            setRoomInfo(room);
+            if (room.status === "IN_PROGRESS" && currentPage !== "game") {
               setCurrentPage("game");
-            } else if (
-              safeNewRoom.status === "LOBBY" &&
-              currentPage !== "game"
-            ) {
+            } else if (room.status === "LOBBY" && currentPage !== "game") {
               setCurrentPage("game");
             }
           }
@@ -131,8 +162,6 @@ export default function App() {
   }, [localPlayer?.id, roomInfo?.id, currentPage]);
 
   const handlePlayPress = useCallback(() => {
-    // player.seekTo(0);
-    // player.play();
     setCurrentPage("lobby_selection");
   }, []);
 
@@ -146,20 +175,13 @@ export default function App() {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
       const { room } = await createRoom(localPlayer.id, localPlayer.username);
-      const safeRoom: Room = {
-        ...room,
-        players: room.players || [],
-        game_log: room.game_log || [],
-        last_played_cards_actual: room.last_played_cards_actual || [],
-      };
-      setRoomInfo(safeRoom);
+      setRoomInfo(room);
       setCurrentPage("game");
+      saveRoomInfo(room.room_code); // Save roomCode
     } catch (err: any) {
-      console.error("App: Error creating room:", err);
-      setError(err.message || "فشل في إنشاء الغرفة.");
+      Alert.alert("خطأ", err.message || "فشل في إنشاء الغرفة.");
     } finally {
       setLoading(false);
     }
@@ -176,24 +198,16 @@ export default function App() {
         return;
       }
       setLoading(true);
-      setError(null);
       try {
         const { room } = await joinRoom(
           code.trim(),
           localPlayer.id,
           localPlayer.username
         );
-        const safeRoom: Room = {
-          ...room,
-          players: room.players || [],
-          game_log: room.game_log || [],
-          last_played_cards_actual: room.last_played_cards_actual || [],
-        };
-        setRoomInfo(safeRoom);
+        setRoomInfo(room);
         setCurrentPage("game");
+        saveRoomInfo(room.room_code);
       } catch (err: any) {
-        console.error("App: Error joining room:", err);
-        setError(err.message || "فشل في الانضمام إلى الغرفة.");
         Alert.alert(
           "فشل الانضمام",
           err.message || "حدث خطأ أثناء الانضمام إلى الغرفة."
@@ -211,15 +225,14 @@ export default function App() {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
       await leaveRoom(roomInfo.id, localPlayer.id);
       setRoomInfo(null);
       setSelectedCards([]);
       setCurrentPage("welcome");
+      removeRoomInfo();
     } catch (err: any) {
-      console.error("App: Error leaving room:", err);
-      setError(err.message || "فشل في مغادرة الغرفة.");
+      Alert.alert("خطأ", err.message || "فشل في مغادرة الغرفة.");
     } finally {
       setLoading(false);
     }
@@ -235,12 +248,10 @@ export default function App() {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
       await startGame(roomInfo.id, localPlayer?.id as string);
     } catch (err: any) {
-      console.error("App: Error starting game:", err);
-      setError(err.message || "فشل في بدء اللعبة.");
+      Alert.alert("خطأ", err.message || "فشل في بدء اللعبة.");
     } finally {
       setLoading(false);
     }
@@ -248,7 +259,6 @@ export default function App() {
 
   const handleCardPress = useCallback((card: Card) => {
     setSelectedCards((prev) => {
-      console.log(prev);
       if (prev.includes(card)) {
         return prev.filter((c) => c !== card);
       } else {
@@ -273,19 +283,55 @@ export default function App() {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
+      let normalizedRank = declaredRankInput.trim().toUpperCase();
+      const rankMap: { [key: string]: string } = {
+        J: "JACK",
+        جاك: "JACK",
+        و: "JACK",
+        Q: "QUEEN",
+        ملكة: "QUEEN",
+        ق: "QUEEN",
+        K: "KING",
+        ملك: "KING",
+        ك: "KING",
+        A: "ACE",
+        آص: "ACE",
+        أ: "ACE",
+      };
+      if (rankMap[normalizedRank]) {
+        normalizedRank = rankMap[normalizedRank];
+      } else if (
+        normalizedRank.length === 1 &&
+        "2345678910".includes(normalizedRank)
+      ) {
+      } else if (
+        normalizedRank.length > 1 &&
+        !isNaN(parseInt(normalizedRank))
+      ) {
+      } else if (
+        normalizedRank.length === 1 &&
+        "JQKA".includes(normalizedRank)
+      ) {
+      } else if (normalizedRank.length > 1) {
+        normalizedRank = normalizedRank;
+      }
+      if (roomInfo.declared_rank === null && !normalizedRank) {
+        Alert.alert("خطأ", "يجب تحديد الرتبة المعلنة.");
+        return;
+      }
+      const finalDeclaredRank =
+        normalizedRank || (roomInfo.declared_rank as string);
       await playCards(
         roomInfo.id,
         localPlayer.id,
         selectedCards,
-        declaredRankInput.trim() || (roomInfo.declared_rank as string)
+        finalDeclaredRank
       );
       setSelectedCards([]);
       setDeclaredRankInput("");
     } catch (err: any) {
-      console.error("App: Error playing cards:", err);
-      setError(err.message || "فشل في لعب البطاقات.");
+      Alert.alert("خطأ", err.message || "فشل في لعب البطاقات.");
     } finally {
       setLoading(false);
     }
@@ -297,12 +343,10 @@ export default function App() {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
       await skipTurn(roomInfo.id, localPlayer.id);
     } catch (err: any) {
-      console.error("App: Error skipping turn:", err);
-      setError(err.message || "فشل في تخطي الدور.");
+      Alert.alert("خطأ", err.message || "فشل في تخطي الدور.");
     } finally {
       setLoading(false);
     }
@@ -314,12 +358,10 @@ export default function App() {
       return;
     }
     setLoading(true);
-    setError(null);
     try {
       await callLie(roomInfo.id, localPlayer.id);
     } catch (err: any) {
-      console.error("App: Error calling lie:", err);
-      setError(err.message || "فشل في كشف الكذبة.");
+      Alert.alert("خطأ", err.message || "فشل في كشف الكذبة.");
     } finally {
       setLoading(false);
     }
@@ -332,14 +374,12 @@ export default function App() {
         return;
       }
       setLoading(true);
-      setError(null);
       try {
         await discardQuads(roomInfo.id, localPlayer.id, rank);
         setSelectedCards([]);
         Alert.alert("نجاح", `تخلصت من 4 بطاقات من رتبة ${rank}.`);
       } catch (err: any) {
-        console.error("App: Error discarding quads:", err);
-        setError(err.message || "فشل في التخلص من الرباعيات.");
+        Alert.alert("خطأ", err.message || "فشل في التخلص من الرباعيات.");
       } finally {
         setLoading(false);
       }
@@ -356,17 +396,6 @@ export default function App() {
         </View>
       );
     }
-
-    if (error) {
-      return (
-        <View className="items-center justify-center flex-1 bg-gray-100">
-          <Text className="mx-5 mb-5 text-base text-center text-red-500">
-            خطأ: {error}
-          </Text>
-        </View>
-      );
-    }
-
     if (roomInfo && localPlayer) {
       return (
         <GameScreen
@@ -394,10 +423,9 @@ export default function App() {
         <WelcomeScreen
           localPlayer={localPlayer}
           setLocalPlayer={setLocalPlayer}
-          usernameInput={usernameInput}
-          setUsernameInput={setUsernameInput}
+          usernameInput={nameInput}
+          setUsernameInput={setNameInput}
           setLoading={setLoading}
-          setError={setError}
           onPlayPress={handlePlayPress}
           loading={loading}
         />
