@@ -11,54 +11,35 @@ import {
 } from "react-native";
 import { changePlayerName } from "../../services/player";
 
-interface Card {
-  rank: string;
-  suit: string;
-}
-interface Player {
-  id: string;
-  username: string;
-  is_host: boolean;
-  hand_cards: Card[];
-  card_count: number;
-}
-
-interface WelcomeScreenProps {
-  localPlayer: Player | null;
-  setLocalPlayer: React.Dispatch<React.SetStateAction<Player | null>>;
-  usernameInput: string;
-  setUsernameInput: React.Dispatch<React.SetStateAction<string>>;
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  setError: React.Dispatch<React.SetStateAction<string | null>>;
-  onPlayPress: () => void;
-  loading: boolean;
-}
-
 export default function WelcomeScreen({
   localPlayer,
   setLocalPlayer,
-  usernameInput,
-  setUsernameInput,
+  nameInput,
+  setNameInput,
   setLoading,
-  setError,
   onPlayPress,
   loading,
-}: WelcomeScreenProps) {
-  const handleChangeUsername = async () => {
-    if (!usernameInput.trim()) {
+}: {
+  localPlayer: Player | null;
+  setLocalPlayer: React.Dispatch<React.SetStateAction<Player | null>>;
+  nameInput: string;
+  setNameInput: React.Dispatch<React.SetStateAction<string>>;
+  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  onPlayPress: () => void;
+  loading: boolean;
+}) {
+  const handleChangeName = async () => {
+    if (!nameInput.trim()) {
       Alert.alert("خطأ", "لا يمكن أن يكون اسم المستخدم فارغاً.");
       return;
     }
     setLoading(true);
     try {
-      await changePlayerName(usernameInput.trim());
+      await changePlayerName(nameInput.trim());
       setLocalPlayer((prev) =>
-        prev ? { ...prev, username: usernameInput.trim() } : null
+        prev ? { ...prev, name: nameInput.trim() } : null
       );
       Alert.alert("نجاح", "تم تحديث اسم المستخدم!");
-    } catch (err: any) {
-      console.error("Error changing username:", err);
-      setError(err.message || "فشل في تغيير اسم المستخدم.");
     } finally {
       setLoading(false);
     }
@@ -132,18 +113,18 @@ export default function WelcomeScreen({
           <View id="divider" className="w-[310px] h-px bg-white/30"></View>
           <View className="flex gap-y-6">
             <TextInput
-              id="username-input"
+              id="name-input"
               className="w-[324px] h-[70px] text-center border-4 text-2xl font-marhey-regular border-white rounded-[15px] text-[#F0CCFF] bg-[#C94CFF]/30"
               placeholder="أدخل اسم المستخدم"
               placeholderTextColor="#F0CCFF"
-              value={usernameInput}
-              onChangeText={setUsernameInput}
+              value={nameInput}
+              onChangeText={setNameInput}
               editable={!loading}
             />
             <Pressable
               id="verify-button"
               className={`w-[324px] h-[65px] ${loading ? "opacity-50" : ""}`}
-              onPress={handleChangeUsername}
+              onPress={handleChangeName}
               onPressIn={() => animatePressIn(verifyButtonScale)}
               onPressOut={() => animatePressOut(verifyButtonScale)}
               disabled={loading}

@@ -147,7 +147,6 @@ export default function LobbySelectionScreen({
             id="rules-button"
             className="w-[60px] h-[64px]"
             onPress={async () => {
-              // Alert.alert("قوانين اللعبة", "هنا ستكون قوانين اللعبة.");
               await Linking.openURL("../../assets/rules.pdf");
             }}
             onPressIn={() => animatePressIn(rulesButtonScale)}

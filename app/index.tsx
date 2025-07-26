@@ -2,7 +2,7 @@ import "react-native-url-polyfill/auto";
 import "react-native-get-random-values";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { View, Text, ActivityIndicator, Alert } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // Import AsyncStorage
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { initPlayerSession } from "../services/player";
 import {
   createRoom,
@@ -36,9 +36,7 @@ export default function App() {
   const saveRoomInfo = async (roomCode: string) => {
     try {
       await AsyncStorage.setItem("lastRoomCode", roomCode);
-    } catch (e) {
-      console.error("Failed to save room info to local storage", e);
-    }
+    } catch (err) {}
   };
 
   const loadRoomInfo = async () => {
@@ -46,7 +44,6 @@ export default function App() {
       const lastRoomCode = await AsyncStorage.getItem("lastRoomCode");
       return { lastRoomCode };
     } catch (e) {
-      console.error("Failed to load room info from local storage", e);
       return { lastRoomId: null, lastRoomCode: null, lastPlayerId: null };
     }
   };
@@ -54,9 +51,7 @@ export default function App() {
   const removeRoomInfo = async () => {
     try {
       await AsyncStorage.removeItem("lastRoomCode");
-    } catch (e) {
-      console.error("Failed to remove room info from local storage", e);
-    }
+    } catch (err) {}
   };
 
   useEffect(() => {
@@ -176,10 +171,10 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const { room } = await createRoom(localPlayer.id, localPlayer.username);
+      const { room } = await createRoom(localPlayer.id, localPlayer.name);
       setRoomInfo(room);
       setCurrentPage("game");
-      saveRoomInfo(room.room_code); // Save roomCode
+      saveRoomInfo(room.room_code);
     } catch (err: any) {
       Alert.alert("خطأ", err.message || "فشل في إنشاء الغرفة.");
     } finally {
@@ -202,7 +197,7 @@ export default function App() {
         const { room } = await joinRoom(
           code.trim(),
           localPlayer.id,
-          localPlayer.username
+          localPlayer.name
         );
         setRoomInfo(room);
         setCurrentPage("game");
@@ -423,8 +418,8 @@ export default function App() {
         <WelcomeScreen
           localPlayer={localPlayer}
           setLocalPlayer={setLocalPlayer}
-          usernameInput={nameInput}
-          setUsernameInput={setNameInput}
+          nameInput={nameInput}
+          setNameInput={setNameInput}
           setLoading={setLoading}
           onPlayPress={handlePlayPress}
           loading={loading}

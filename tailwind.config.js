@@ -14,7 +14,6 @@ module.exports = {
         "orange-thi": "#FFAD44",
       },
       fontFamily: {
-        // Marhey weights
         "marhey-light": ["Marhey_300Light"],
         "marhey-regular": ["Marhey_400Regular"],
         "marhey-medium": ["Marhey_500Medium"],

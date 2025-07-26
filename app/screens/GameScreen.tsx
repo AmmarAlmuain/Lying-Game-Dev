@@ -47,9 +47,6 @@ export default function GameScreen({
   loading: boolean;
 }) {
   if (!roomInfo || !localPlayer) {
-    console.warn(
-      "GameScreen: roomInfo or localPlayer is null/undefined. Returning fallback UI."
-    );
     return (
       <View className="items-center justify-center flex-1 bg-gray-100">
         <Text className="px-4 text-lg text-center text-red-500">
@@ -69,6 +66,8 @@ export default function GameScreen({
   const playerOnDevice = playersInRoom.find(
     (player) => player.id === localPlayer.id
   );
+
+  console.log(playerOnDevice);
 
   const isMyTurn =
     roomInfo.turn_order_player_ids[roomInfo.current_player_index] ===
@@ -183,7 +182,7 @@ export default function GameScreen({
         <View className="flex-1 pt-12 gap-y-5">
           <View
             id="room-action"
-            className="flex-row items-center justify-between"
+            className="flex-row items-center justify-center"
           >
             <Pressable
               id="leave-room-button"
@@ -207,13 +206,8 @@ export default function GameScreen({
           >
             {roomInfo.game_log && roomInfo.game_log.length > 0 ? (
               <View className="flex flex-col-reverse items-end justify-end">
-                <Text className="text-right text-white w-[280px] font-marhey-bold">
-                  {roomInfo.game_log[roomInfo.game_log.length - 1].length > 40
-                    ? `${roomInfo.game_log[roomInfo.game_log.length - 1].slice(
-                        0,
-                        120
-                      )}...`
-                    : roomInfo.game_log[roomInfo.game_log.length - 1]}
+                <Text className="text-right text-white max-w-[250px] border border-white/30 text-xs font-marhey-bold">
+                  {roomInfo.game_log[roomInfo.game_log.length - 1]}
                 </Text>
               </View>
             ) : (
@@ -420,7 +414,6 @@ export default function GameScreen({
                 onPressIn={() => animatePressIn(lieButtonScale)}
                 onPressOut={() => animatePressOut(lieButtonScale)}
                 disabled={
-                  // Corrected disabled condition: should be !loading instead of !loading || !isMyTurn
                   loading ||
                   !isMyTurn ||
                   !gameStarted ||
@@ -467,7 +460,6 @@ export default function GameScreen({
               <Pressable
                 id="discard-quads-button"
                 className={`w-[170px] h-[60px] ${
-                  // Updated opacity condition
                   !gameStarted || loading || !isMyTurn || !canDiscardQuads
                     ? "opacity-50"
                     : ""
@@ -478,7 +470,6 @@ export default function GameScreen({
                 onPressIn={() => animatePressIn(discardButtonScale)}
                 onPressOut={() => animatePressOut(discardButtonScale)}
                 disabled={
-                  // Updated disabled condition
                   !gameStarted || loading || !isMyTurn || !canDiscardQuads
                 }
                 style={{ transform: [{ scale: 0.85 }] }}

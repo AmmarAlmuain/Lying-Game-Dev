@@ -1,8 +1,6 @@
-// _layout.js (or RootLayout.js)
 import { Stack } from "expo-router";
 import "../global.css";
-import React, { useEffect } from "react"; // No need for useCallback here, it was for onLayout
-import { Text, View, StyleSheet } from "react-native"; // Add StyleSheet for temporary testing
+import React, { useEffect } from "react";
 import { useFonts } from "expo-font";
 import {
   Marhey_300Light,
@@ -29,10 +27,10 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     } else {
     }
-  }, [fontsLoaded, fontError]); // Dependency array: run when these change
+  }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) {
-    return null; // Keep splash screen visible while loading
+    return null;
   }
 
   return (
