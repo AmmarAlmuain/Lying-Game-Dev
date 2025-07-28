@@ -33,8 +33,6 @@ This project is a real-time multiplayer card game built with React Native, lever
         
     -   [Contributing](https://www.google.com/search?q=%23contributing "null")
         
-    -   [License](https://www.google.com/search?q=%23license "null")
-        
 
 ## Introduction
 
