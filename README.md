@@ -1,7 +1,7 @@
 
 # Multiplayer Card Game (React Native)
 
-This project is a real-time multiplayer card game built with React Native, leveraging Supabase for backend services, real-time updates, and authentication. It provides a seamless and interactive experience for players to join rooms, play cards, and interact within a game session.
+This project is a real-time multiplayer card game built with React Native, leveraging Supabase for backend services, real-time updates. It provides a seamless and interactive experience for players to join rooms, play cards, and interact within a game session.
 
 ## Table of Contents
 
@@ -90,8 +90,6 @@ This application is a dynamic multiplayer card game designed for mobile platform
     -   **PostgreSQL Database:** For storing game and player data.
         
     -   **Realtime Subscriptions:** For instant updates on game state changes.
-        
-    -   **Authentication:** For managing player sessions (though anonymous/session-based in this `index.tsx`).
         
 -   **`@react-native-async-storage/async-storage`:** For client-side data persistence.
     
